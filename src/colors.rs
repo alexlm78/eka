@@ -39,6 +39,7 @@ impl Colors {
     }
 
     /// Prints a complete line with colors
+    #[allow(dead_code)]
     pub fn print_colored_line(text: &str, file_type: FileType, is_hidden: bool) {
         Self::print_with_color(text, file_type, is_hidden);
         println!();
@@ -75,6 +76,7 @@ impl ColoredOutput {
     }
 
     /// Prints size with color coding (small in green, large in yellow)
+    #[allow(dead_code)]
     pub fn print_size(size: u64) {
         if size < 1024 {
             print!("\x1b[32m{:>4}\x1b[0m ", size);

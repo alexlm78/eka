@@ -40,6 +40,7 @@ pub struct Args {
 
 impl Args {
     /// Creates default argument values
+    #[allow(dead_code)]
     pub fn default() -> Self {
         Self {
             long: false,

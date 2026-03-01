@@ -82,6 +82,7 @@ impl FileType {
 #[derive(Debug, Clone)]
 pub struct FileEntry {
     pub name: String,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub file_type: FileType,
     pub size: u64,

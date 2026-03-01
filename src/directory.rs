@@ -64,6 +64,7 @@ fn sort_entries(entries: &mut Vec<FileEntry>) {
 }
 
 /// Extracts the base name of the path for display purposes
+#[allow(dead_code)]
 pub fn get_dir_name(path: &str) -> String {
     let path = Path::new(path);
     path.file_name()
