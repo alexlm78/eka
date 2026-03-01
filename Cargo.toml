@@ -2,6 +2,13 @@
 name = "eka"
 version = "0.2.0"
 edition = "2024"
+description = "A modern replacement for ls with colors"
+authors = ["Eka Contributors"]
+license = "MIT"
+repository = "https://github.com/alexlm78/eka"
+readme = "README.md"
+
+[build-dependencies]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
@@ -10,3 +17,6 @@ chrono = "0.4"
 [[bin]]
 name = "eka"
 path = "src/main.rs"
+
+[package.metadata.man]
+sections = ["user-utils"]

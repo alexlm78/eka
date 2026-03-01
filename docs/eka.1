@@ -1,0 +1,125 @@
+.TH EKA 1 "Version 0.2.0" "February 2026" "Eka User Manual"
+.SH NAME
+eka \- list directory contents with color coding
+.SH SYNOPSIS
+.B eka
+[\fIflags\fR] [\fIdirectory\fR]...
+.SH DESCRIPTION
+.PP
+\fBEka\fR is a modern replacement for the traditional \fBls\fR command, written in Rust. It displays files and directories with color-coded output for easy identification.
+.SH OPTIONS
+.SS "Basic Options"
+.TP
+\fB\-1\fR
+List one file per line.
+.TP
+\fB\-l\fR, \fB\-\-long\fR
+Use a long listing format with columns (permissions, size, date, name).
+.TP
+\fB\-d\fR, \fB\-\-directories\fR
+List directories only, not their contents.
+.TP
+\fB\-a\fR, \fB\-\-all\fR
+Show hidden files (starting with .).
+.TP
+\fB\-H\fR, \fB\-\-human\-readable\fR
+Display file sizes in human-readable format (KB, MB, GB).
+.SS "Classification Options"
+.TP
+\fB\-F\fR, \fB\-\-classify\fR
+Append file type indicators (* / = > @ |) to file names.
+.TP
+\fB\-i\fR, \fB\-\-inode\fR
+Print the inode number of each file.
+.SS "Sorting Options"
+.TP
+\fB\-S\fR
+Sort by file size, largest files first.
+.TP
+\fB\-t\fR
+Sort by modification time, newest first.
+.TP
+\fB\-u\fR
+Sort by access time, newest first.
+.TP
+\fB\-r\fR, \fB\-\-reverse\fR
+Reverse the sort order.
+.TP
+\fB\-\-sort=\fR\fIWORD\fR
+Sort by WORD instead of name: none, name, size, time, access, change, extension.
+.SS "Recursive Options"
+.TP
+\fB\-R\fR, \fB\-\-recursive\fR
+List subdirectories recursively.
+.SH OUTPUT FORMAT
+.SS "Short Format (default)"
+Displays file names in a vertical list with color coding based on file type.
+.SS "Long Format (\fB\-l\fR)"
+Displays detailed information in columns:
+.PP
+\fIPermissions  Links  User  Group  Size  Date  Name\fR
+.SH COLOR CODES
+.PP
+Eka uses ANSI color codes to distinguish file types:
+.TP
+\fBCyan\fR
+Directories
+.TP
+\fBBright Green\fR
+Executable files
+.TP
+\fBYellow\fR
+Symbolic links
+.TP
+\fBMagenta\fR
+Image files
+.TP
+\fBRed\fR
+Video files
+.TP
+\fBOrange\fR
+Audio files
+.TP
+\fBPurple\fR
+Compressed files
+.TP
+\fBWhite\fR
+Regular files
+.TP
+\fBDark Gray\fR
+Hidden files
+.SH EXAMPLES
+.TP
+List current directory:
+\fBeka\fR
+.TP
+List with long format:
+\fBeka -l\fR
+.TP
+List including hidden files:
+\fBeka -a\fR
+.TP
+Long format with human-readable sizes:
+\fBeka -lh\fR
+.TP
+Sort by size (largest first):
+\fBeka -lS\fR
+.TP
+Sort by modification time:
+\fBeka -lt\fR
+.TP
+List directories recursively:
+\fBeka -R\fR
+.TP
+Classify files with indicators:
+\fBeka -F\fR
+.SH AUTHOR
+Written by the Eka contributors.
+.SH BUGS
+Report bugs at: https://github.com/yourusername/eka/issues
+.SH COPYRIGHT
+MIT License
+.SH "SEE ALSO"
+.BR ls (1),
+.BR dir (1),
+.BR vdir (1)
