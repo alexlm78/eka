@@ -46,7 +46,13 @@ impl Colors {
     }
 
     /// Prints the filename with its characteristic color
+    #[allow(dead_code)]
     pub fn print_filename(entry: &crate::types::FileEntry) {
+        Self::print_filename_with_indicator(entry, false);
+    }
+
+    /// Prints the filename with its characteristic color and optional classification indicator
+    pub fn print_filename_with_indicator(entry: &crate::types::FileEntry, classify: bool) {
         // For symlinks, display the target in a different color
         if entry.is_symlink {
             let color = Self::get_color(entry.file_type);
@@ -58,6 +64,15 @@ impl Colors {
             }
         } else {
             Self::print_with_color(&entry.name, entry.file_type, entry.is_hidden);
+        }
+        
+        // Add classification indicator if requested
+        if classify {
+            let indicator = entry.file_type.indicator();
+            if !indicator.is_empty() {
+                let color = Self::get_color(entry.file_type);
+                print!("{}{}{}", color, indicator, Self::reset());
+            }
         }
     }
 }

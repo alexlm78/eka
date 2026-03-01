@@ -284,3 +284,17 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# Local application settings (Java, .NET, etc.)
+application-*.{properties,yaml,yml}
+appsettings.*.json
+
+# Kreaker specific files
+CLAUDE.md
+GEMINI.md
+WARP.md
+.kilocode/
+.claude/
+.kiro/
+.trae/
+doxs/

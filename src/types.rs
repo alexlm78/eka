@@ -2,6 +2,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::cli::SortField;
+
 /// Categorized file types for color coding
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
@@ -47,28 +49,28 @@ impl FileType {
             
             // Images
             if matches!(name_str.as_str(), 
-                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "svg" | "webp" | "ico" | "tiff"
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "svg" | "webp" | "tiff"
             ) {
                 return FileType::Image;
             }
 
             // Videos
             if matches!(name_str.as_str(),
-                "mp4" | "avi" | "mkv" | "mov" | "wmv" | "flv" | "webm" | "m4v"
+                "mp4" | "avi" | "mkv" | "mov" | "wmv" | "flv" | "webm" | "m4v" | "mpeg" | "mpg"
             ) {
                 return FileType::Video;
             }
 
             // Audio
             if matches!(name_str.as_str(),
-                "mp3" | "wav" | "flac" | "aac" | "ogg" | "wma" | "m4a"
+                "mp3" | "wav" | "flac" | "aac" | "ogg" | "wma" | "m4a" | "aiff"
             ) {
                 return FileType::Audio;
             }
 
             // Compressed files
             if matches!(name_str.as_str(),
-                "zip" | "tar" | "gz" | "bz2" | "7z" | "rar" | "xz" | "tgz"
+                "zip" | "tar" | "gz" | "bz2" | "7z" | "rar" | "xz" | "tgz" | "cab"
             ) {
                 return FileType::Compressed;
             }
@@ -78,9 +80,28 @@ impl FileType {
     }
 }
 
+/// Classification indicator for file types (used with -F flag)
+impl FileType {
+    /// Returns the classification indicator for this file type
+    pub fn indicator(&self) -> &'static str {
+        match self {
+            FileType::Directory => "/",
+            FileType::Executable => "*",
+            FileType::Symlink => "@",
+            FileType::Image => "",
+            FileType::Video => "",
+            FileType::Audio => "",
+            FileType::Compressed => "",
+            FileType::Regular => "",
+        }
+    }
+}
+
 /// Represents a file entry in a directory listing
 #[derive(Debug, Clone)]
 pub struct FileEntry {
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub name: String,
     #[allow(dead_code)]
     pub path: PathBuf,
@@ -88,9 +109,13 @@ pub struct FileEntry {
     pub size: u64,
     pub permissions: String,
     pub modified: SystemTime,
+    pub accessed: SystemTime,
+    pub changed: SystemTime,
     pub is_hidden: bool,
     pub is_symlink: bool,
     pub symlink_target: Option<String>,
+    pub inode: Option<u64>,
+    pub nlink: u32,
 }
 
 impl FileEntry {
@@ -99,6 +124,7 @@ impl FileEntry {
         let name = path.file_name()?.to_string_lossy().to_string();
         let is_hidden = name.starts_with('.');
         
+        // Use fs::metadata to get all file info including symlink target
         let metadata = match fs::metadata(&path) {
             Ok(m) => m,
             Err(_) => return None,
@@ -106,6 +132,22 @@ impl FileEntry {
 
         let mut is_symlink = false;
         let mut symlink_target = None;
+        let inode: Option<u64>;
+        let nlink: u32;
+
+        // Get inode number and nlink (Unix-specific)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            inode = Some(metadata.ino());
+            nlink = metadata.nlink() as u32;
+        }
+
+        #[cfg(not(unix))]
+        {
+            inode = None;
+            nlink = 1;
+        }
 
         // If it's a symlink, obtain the target
         if metadata.file_type().is_symlink() {
@@ -119,6 +161,12 @@ impl FileEntry {
         
         // Get permissions in rw-r--r-- format
         let permissions = Self::format_permissions(&metadata);
+        
+        // Get all time fields
+        let modified = metadata.modified().ok().unwrap_or(SystemTime::UNIX_EPOCH);
+        let accessed = metadata.accessed().ok().unwrap_or(SystemTime::UNIX_EPOCH);
+        // Note: changed() is not available on all platforms, use modified as fallback
+        let changed = modified;
 
         Some(Self {
             name,
@@ -126,11 +174,25 @@ impl FileEntry {
             file_type,
             size: metadata.len(),
             permissions,
-            modified: metadata.modified().ok().unwrap_or(SystemTime::UNIX_EPOCH),
+            modified,
+            accessed,
+            changed,
             is_hidden,
             is_symlink,
             symlink_target,
+            inode,
+            nlink,
         })
+    }
+
+    /// Gets the time value for sorting based on sort field
+    pub fn get_sort_time(&self, sort_field: SortField) -> SystemTime {
+        match sort_field {
+            SortField::Time => self.modified,
+            SortField::Access => self.accessed,
+            SortField::Change => self.changed,
+            _ => self.modified, // Default fallback
+        }
     }
 
     /// Formats permissions in Unix style (rwx)
@@ -168,5 +230,18 @@ impl FileEntry {
     #[cfg(not(unix))]
     fn format_permissions(_metadata: &fs::Metadata) -> String {
         "-rw-r--r--".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_type_indicator() {
+        assert_eq!(FileType::Directory.indicator(), "/");
+        assert_eq!(FileType::Executable.indicator(), "*");
+        assert_eq!(FileType::Symlink.indicator(), "@");
+        assert_eq!(FileType::Regular.indicator(), "");
     }
 }
