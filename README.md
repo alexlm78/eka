@@ -16,7 +16,7 @@ Eka is a modern replacement for the traditional `ls` command, written in Rust. I
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/eka.git
+git clone https://github.com/alexlm78/eka.git
 cd eka
 
 # Build the project

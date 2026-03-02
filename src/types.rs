@@ -31,13 +31,21 @@ impl FileType {
         }
 
         // Check if it's executable
-        if metadata.permissions().readonly() == false {
-            // Only executable if it has execute permission
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = metadata.permissions().mode();
-                if mode & 0o111 != 0 {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = metadata.permissions().mode();
+            if mode & 0o111 != 0 {
+                return FileType::Executable;
+            }
+        }
+
+        // On Windows, check for executable extensions
+        #[cfg(windows)]
+        {
+            if let Some(ext) = path.extension() {
+                let ext_str = ext.to_string_lossy().to_lowercase();
+                if matches!(ext_str.as_str(), "exe" | "bat" | "cmd" | "com" | "ps1" | "msi") {
                     return FileType::Executable;
                 }
             }
