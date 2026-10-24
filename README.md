@@ -182,6 +182,8 @@ Eka is faster than the others on large flat listings and ties GNU ls on recursio
 
 ## Known differences from GNU `ls`
 
+- **Newlines in names:** with `--quoting-style=literal` or `shell` (and `-N`), eka prints a newline inside a name as `?`. GNU coreutils 9.4 prints it raw; newer versions print `?`. The escaping styles (`-b`, `-Q`, `shell-escape`, `c`, `escape`) are identical.
+- **Column fit:** eka lets the columns fill the width exactly (`total <= width`), as recent coreutils do. Older ones, such as Ubuntu's 9.4, need `total < width`, so at exact-fit widths they use one column fewer.
 - **Sort order:** names are compared bytewise, like GNU `ls` in the `C` locale. In a UTF-8 locale GNU `ls` sorts by collation rules (`apple Apple2 banana Banana2`, where eka prints `Apple2 Banana2 apple banana`), so listings of mixed-case names differ.
 
 - Not implemented yet: `--author`, `--si`, `-D`, `-Z`.

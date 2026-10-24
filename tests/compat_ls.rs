@@ -38,6 +38,43 @@ fn assert_same(f: &Fixture, cases: &[&[&str]]) {
     );
 }
 
+/// Like `assert_same` for the column layouts. Older GNU coreutils (Ubuntu's)
+/// need the columns to fit strictly inside the width (`total < width`), newer
+/// ones accept an exact fit (`total <= width`), and eka follows the newer
+/// rule. So the reference at width N may equal eka at width N or at N - 1.
+/// Nothing else is allowed to differ.
+fn assert_same_columns(f: &Fixture, cases: &[&[&str]]) {
+    let mut diffs = Vec::new();
+    for args in cases {
+        let theirs = sys_ls(f, args);
+        if eka(f, args).stdout == theirs.stdout {
+            continue;
+        }
+        let mut narrower: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+        if let Some(i) = narrower.iter().position(|a| a == "-w")
+            && let Some(width) = narrower.get(i + 1).and_then(|w| w.parse::<usize>().ok())
+            && width > 1
+        {
+            narrower[i + 1] = (width - 1).to_string();
+        }
+        let refs: Vec<&str> = narrower.iter().map(String::as_str).collect();
+        if eka(f, &refs).stdout == theirs.stdout {
+            continue;
+        }
+        diffs.push(format!(
+            "{args:?}\n  eka: {:?}\n  ls:  {:?}",
+            text(&eka(f, args).stdout),
+            text(&theirs.stdout)
+        ));
+    }
+    assert!(
+        diffs.is_empty(),
+        "differences from {}:\n{}",
+        ls_path(),
+        diffs.join("\n")
+    );
+}
+
 macro_rules! need_ls {
     () => {
         if !has_system_ls() {
@@ -263,8 +300,9 @@ fn long_format_with_inodes_and_classification_matches() {
 fn hostile_tree() -> Fixture {
     let f = Fixture::new();
     for name in [
+        // A name with a newline is covered by its own test: how GNU ls shows
+        // it unescaped depends on the coreutils version.
         "evil\u{1b}[2J",
-        "line\nbreak",
         "tab\tname",
         "with space",
         "plain",
@@ -358,7 +396,7 @@ fn gnu_layouts_match() {
     for n in ["a", "bb", "ccc", "dd", "e", "ffff", "g", "hhhhh", "i", "jj"] {
         f.file(n, 1, day(1));
     }
-    assert_same(
+    assert_same_columns(
         &f,
         &[
             &["-C", "-w", "20"],
@@ -376,6 +414,27 @@ fn gnu_layouts_match() {
             &["-Cs", "-w", "30"],
             &["-Ci", "-w", "40"],
             &["-CF", "-w", "30"],
+        ],
+    );
+}
+
+#[test]
+fn gnu_newline_in_a_name_is_escaped_like_gnu() {
+    need_gnu!();
+    let f = Fixture::new();
+    f.file("line\nbreak", 1, day(1)).file("plain", 1, day(1));
+    // Only the styles that escape it: with the others, GNU ls prints the
+    // newline raw or as "?" depending on the coreutils version, and eka
+    // always prints "?" so one entry cannot span two lines.
+    assert_same(
+        &f,
+        &[
+            &["-1", "--quoting-style=shell-escape"],
+            &["-1", "--quoting-style=shell-escape-always"],
+            &["-1", "--quoting-style=c"],
+            &["-1", "--quoting-style=escape"],
+            &["-1b"],
+            &["-1Q"],
         ],
     );
 }
@@ -402,10 +461,13 @@ fn gnu_quoting_styles_match() {
         cases.push(vec![flags]);
     }
     cases.push(vec!["-m", "-w", "60", "--quoting-style=shell-escape"]);
-    cases.push(vec!["-C", "-w", "60", "--quoting-style=shell-escape"]);
     cases.push(vec!["-l", "--quoting-style=shell-escape"]);
     let refs: Vec<&[&str]> = cases.iter().map(Vec::as_slice).collect();
     assert_same(&hostile_tree(), &refs);
+    assert_same_columns(
+        &hostile_tree(),
+        &[&["-C", "-w", "60", "--quoting-style=shell-escape"]],
+    );
 }
 
 #[test]
