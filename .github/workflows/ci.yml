@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Keep in sync with rust-version in Cargo.toml
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.120.0
       - uses: Swatinem/rust-cache@v2
       - name: Build and test on the minimum supported version
         run: cargo test --locked --bin eka
