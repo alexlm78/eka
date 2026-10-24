@@ -1,5 +1,7 @@
 use crate::cli::{Args, SortField};
+use crate::glob;
 use crate::types::FileEntry;
+use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -34,7 +36,8 @@ pub fn read_directory(
     if args.all {
         for dot in [".", ".."] {
             match FileEntry::with_name(path.join(dot), OsString::from(dot), false) {
-                Ok(e) => file_entries.push(e),
+                Ok(e) if should_list(&e, args) => file_entries.push(e),
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!(
                         "eka: cannot access '{}/{}': {}",
@@ -58,7 +61,7 @@ pub fn read_directory(
             }
         };
         match FileEntry::with_name(entry.path(), entry.file_name(), args.dereference()) {
-            Ok(fe) if args.show_hidden() || !fe.is_hidden => file_entries.push(fe),
+            Ok(fe) if should_list(&fe, args) => file_entries.push(fe),
             Ok(_) => {}
             Err(e) => {
                 eprintln!(
@@ -73,6 +76,29 @@ pub fn read_directory(
 
     sort_entries(&mut file_entries, args);
     Ok(file_entries)
+}
+
+/// Whether an entry remains after visibility and name-pattern filtering.
+fn should_list(entry: &FileEntry, args: &Args) -> bool {
+    let name = entry.name.as_bytes();
+    if !args.show_hidden() && entry.is_hidden {
+        return false;
+    }
+    if args.ignore_backups && name.ends_with(b"~") {
+        return false;
+    }
+    if args
+        .ignore
+        .iter()
+        .any(|pattern| glob::matches(pattern.as_bytes(), name))
+    {
+        return false;
+    }
+    args.show_hidden()
+        || !args
+            .hide
+            .iter()
+            .any(|pattern| glob::matches(pattern.as_bytes(), name))
 }
 
 /// Reads a directory and all subdirectories (symlinks are not followed, so no cycles)
@@ -123,12 +149,65 @@ pub fn sort_entries(entries: &mut [FileEntry], args: &Args) {
                 SortField::Size => b.size.cmp(&a.size).then_with(by_name),
                 SortField::Time => b.time(time).cmp(&a.time(time)).then_with(by_name),
                 SortField::Extension => extension(a).cmp(extension(b)).then_with(by_name),
+                SortField::Version => version_cmp(a.name.as_bytes(), b.name.as_bytes()),
             }
         });
     }
     if args.reverse {
         entries.reverse();
     }
+    if args.group_directories_first {
+        entries.sort_by_key(|entry| !entry.file_type.is_dir());
+    }
+}
+
+/// Compares names using runs of ASCII digits as version numbers.
+pub fn version_cmp(a: &[u8], b: &[u8]) -> Ordering {
+    let mut ai = 0;
+    let mut bi = 0;
+    while ai < a.len() && bi < b.len() {
+        if a[ai].is_ascii_digit() && b[bi].is_ascii_digit() {
+            let a_end = a[ai..]
+                .iter()
+                .position(|byte| !byte.is_ascii_digit())
+                .map_or(a.len(), |offset| ai + offset);
+            let b_end = b[bi..]
+                .iter()
+                .position(|byte| !byte.is_ascii_digit())
+                .map_or(b.len(), |offset| bi + offset);
+            let a_digits = &a[ai..a_end];
+            let b_digits = &b[bi..b_end];
+            let a_significant = a_digits
+                .iter()
+                .position(|byte| *byte != b'0')
+                .unwrap_or(a_digits.len());
+            let b_significant = b_digits
+                .iter()
+                .position(|byte| *byte != b'0')
+                .unwrap_or(b_digits.len());
+            let a_value = &a_digits[a_significant..];
+            let b_value = &b_digits[b_significant..];
+            match a_value
+                .len()
+                .cmp(&b_value.len())
+                .then_with(|| a_value.cmp(b_value))
+            {
+                Ordering::Equal => {}
+                order => return order,
+            }
+            ai = a_end;
+            bi = b_end;
+        } else {
+            match a[ai].cmp(&b[bi]) {
+                Ordering::Equal => {
+                    ai += 1;
+                    bi += 1;
+                }
+                order => return order,
+            }
+        }
+    }
+    a.cmp(b)
 }
 
 /// Bytes after the last dot of the name (empty when there is none)
@@ -247,6 +326,76 @@ mod tests {
     }
 
     #[test]
+    fn test_version_sort_and_comparison() {
+        let mut v = vec![entry("file10", 0), entry("file2", 0), entry("file1", 0)];
+        let args = Args {
+            sort_version: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["file1", "file2", "file10"]);
+        assert_eq!(version_cmp(b"a1b", b"a1c"), Ordering::Less);
+        assert_eq!(version_cmp(b"file01", b"file1"), Ordering::Less);
+        assert_eq!(
+            version_cmp(b"x999999999999999999999", b"x1000000000000000000000"),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn test_group_directories_first_after_reverse() {
+        let mut sub = entry("sub", 0);
+        sub.file_type = FileType::Directory;
+        let mut another = entry("another", 0);
+        another.file_type = FileType::Directory;
+        let mut v = vec![entry("a", 0), sub, entry("z", 0), another];
+        let args = Args {
+            group_directories_first: true,
+            reverse: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["sub", "another", "z", "a"]);
+    }
+
+    #[test]
+    fn test_group_directories_first_keeps_equal_name_order() {
+        let mut first = entry("same", 0);
+        first.file_type = FileType::Directory;
+        first.path = PathBuf::from("first");
+        let mut second = entry("same", 0);
+        second.file_type = FileType::Directory;
+        second.path = PathBuf::from("second");
+        let mut v = vec![entry("same", 0), second, entry("other", 0), first];
+        let args = Args {
+            group_directories_first: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["same", "same", "other", "same"]);
+        assert_eq!(v[0].path, PathBuf::from("second"));
+        assert_eq!(v[1].path, PathBuf::from("first"));
+    }
+
+    #[test]
+    fn test_group_directories_first_preserves_directory_order_without_sorting() {
+        let mut first = entry("first", 0);
+        first.file_type = FileType::Directory;
+        let mut second = entry("second", 0);
+        second.file_type = FileType::Directory;
+        let mut link = entry("link", 0);
+        link.file_type = FileType::Symlink;
+        let mut v = vec![entry("z", 0), second, link, first, entry("a", 0)];
+        let args = Args {
+            sort_none: true,
+            group_directories_first: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["second", "first", "z", "link", "a"]);
+    }
+
+    #[test]
     fn test_reverse_reverses_ties_too() {
         let mut v = vec![entry("a", 10), entry("b", 10), entry("c", 50)];
         let args = Args {
@@ -315,6 +464,35 @@ mod tests {
             ),
             [".", "..", ".h", "v"]
         );
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_ignore_and_hide_filters() {
+        let d = tmp("filters");
+        for name in ["a.txt", "a.o", "keep", "x~", ".hidden"] {
+            fs::write(d.join(name), b"").unwrap();
+        }
+        let ignored = Args {
+            ignore: vec!["*.txt".to_string(), ".hidden".to_string()],
+            hide: vec!["a*".to_string()],
+            ignore_backups: true,
+            ..Default::default()
+        };
+        assert_eq!(list(&d, &ignored), ["keep"]);
+        let all = Args {
+            all: true,
+            ignore: vec!["*.txt".to_string(), ".hidden".to_string()],
+            hide: vec!["a*".to_string()],
+            ignore_backups: true,
+            ..Default::default()
+        };
+        assert_eq!(list(&d, &all), [".", "..", "a.o", "keep"]);
+        let almost_all = Args {
+            almost_all: true,
+            ..ignored
+        };
+        assert_eq!(list(&d, &almost_all), ["a.o", "keep"]);
         fs::remove_dir_all(d).unwrap();
     }
 

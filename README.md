@@ -6,7 +6,7 @@ Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It
 
 ## Features
 
-- **GNU-compatible flags and output**: `-1 -C -x -m -w -a -A -d -F -p -h -i -s -k -l -n -g -o -G -L -H -P -R -r -S -t -u -c --sort --time --time-style --full-time --block-size --color`
+- **GNU-compatible flags and output**: `-1 -C -x -m -w -a -A -B -d -F -p -h -i -s -k -l -n -g -o -G -L -H -P -R -r -S -t -u -c -v -X -U -I --hide --group-directories-first --sort --time --time-style --full-time --block-size --color`
 - **Columns**: multi-column output on terminals (`-C`, `-x`, `-m`, `-w`), one entry per line when piped
 - **Real owner and group names**, cached per run, with numeric fallback
 - **Correct long format**: no header row, columns sized to fit, `total` in 1 KiB blocks, `Mon DD HH:MM` for recent files and `Mon DD  YYYY` for older ones
@@ -81,8 +81,15 @@ When several paths are given, files are listed first, then each directory under 
 | `-t` | Sort by time, newest first |
 | `-u` | Use access time. With `-lt` sort by it and show it; with `-l` show it and sort by name; otherwise sort by it |
 | `-c` | Use status-change (ctime) time. Same rules as `-u` |
+| `-v` | Natural sort of version numbers (`file2` before `file10`) |
+| `-X` | Sort by extension, then name |
+| `-U` | Do not sort; list in directory order |
 | `-r`, `--reverse` | Reverse the sort order |
-| `--sort=WORD` | `name` (default), `none`, `size`, `time`, `extension` |
+| `--sort=WORD` | `name` (default), `none`, `size`, `time`, `version`, `extension` |
+| `--group-directories-first` | List directories before other entries, whatever the sort or `-r` |
+| `-I`, `--ignore=PATTERN` | Do not list entries matching the shell `PATTERN`; repeatable, applies even with `-a` |
+| `--hide=PATTERN` | Like `-I`, but `-a` and `-A` override it |
+| `-B`, `--ignore-backups` | Do not list entries ending with `~` |
 | `-L`, `--dereference` | Show information for the file a symlink points to |
 | `-H`, `--dereference-command-line` | Follow symlinks named on the command line |
 | `-P` | Never follow symlinks (default); overrides `-H` and `-L` |
@@ -93,7 +100,9 @@ When several paths are given, files are listed first, then each directory under 
 | `--help` | Print help |
 | `-V`, `--version` | Print the version |
 
-Names are sorted bytewise (like `LC_ALL=C ls`), ties in size and time fall back to the name, and directories are not grouped first.
+Names are sorted bytewise (like `LC_ALL=C ls`), ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When several sort options are combined the order of precedence is `--sort`, `-U`, `-S`, `-t`, `-v`, `-X`.
+
+Patterns for `-I` and `--hide` support `*`, `?`, `[abc]`, `[a-z]`, `[!abc]` and `\` escapes, are matched against the whole name (a leading dot is not special) and never apply to paths named on the command line.
 
 ### Exit status
 
@@ -126,7 +135,7 @@ If `LS_COLORS` is set, Eka uses it (keys `di ln ex or pi so bd cd fi` and `*.ext
 
 ## Known differences from GNU `ls`
 
-- Not implemented yet: `-q -b -N -Q` and `ls`-style quoting of unusual names, `-v -X -U -I --hide --group-directories-first`, `--author`, `--si`, `-D`, `-Z`.
+- Not implemented yet: `-q -b -N -Q` and `ls`-style quoting of unusual names, `--author`, `--si`, `-D`, `-Z`.
 - Names are not escaped, so a name with control characters is written as is.
 - `-C` pads with spaces; GNU may use tabs.
 - Column widths count code points, so wide (CJK) characters are not measured correctly.
@@ -151,6 +160,7 @@ eka/
     ├── directory.rs      # Directory reading, filtering, sorting, recursion
     ├── formatter.rs      # Short and long output, sizes, dates, totals, owner names
     ├── layout.rs         # Column layout arithmetic (-C, -x, -m)
+    ├── glob.rs           # Shell pattern matcher for -I and --hide
     ├── colors.rs         # Palette, LS_COLORS parsing, color decision
     └── types.rs          # FileEntry (lstat based) and file type model
 ```

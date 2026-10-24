@@ -15,6 +15,8 @@ pub enum SortField {
     Time,
     /// Sort by extension
     Extension,
+    /// Sort by version number in names
+    Version,
 }
 
 /// Which timestamp is shown (-l) and used for time sorting (-t)
@@ -222,6 +224,18 @@ pub struct Args {
     #[arg(short = 't')]
     pub sort_time: bool,
 
+    /// Sort by version number in names
+    #[arg(short = 'v')]
+    pub sort_version: bool,
+
+    /// Sort by extension
+    #[arg(short = 'X')]
+    pub sort_extension: bool,
+
+    /// Do not sort; list entries in directory order
+    #[arg(short = 'U')]
+    pub sort_none: bool,
+
     /// With -lt: sort by, and show, access time; with -l: show access time
     /// and sort by name; otherwise: sort by access time, newest first
     #[arg(short = 'u')]
@@ -247,6 +261,22 @@ pub struct Args {
     /// Reverse order while sorting
     #[arg(short = 'r', long = "reverse")]
     pub reverse: bool,
+
+    /// List directories before other entries
+    #[arg(long = "group-directories-first")]
+    pub group_directories_first: bool,
+
+    /// Do not list entries matching PATTERN
+    #[arg(short = 'I', long = "ignore", value_name = "PATTERN", action = ArgAction::Append)]
+    pub ignore: Vec<String>,
+
+    /// Do not list entries matching PATTERN unless -a or -A is given
+    #[arg(long = "hide", value_name = "PATTERN", action = ArgAction::Append)]
+    pub hide: Vec<String>,
+
+    /// Do not list entries ending in ~
+    #[arg(short = 'B', long = "ignore-backups")]
+    pub ignore_backups: bool,
 
     /// Print the index number of each file
     #[arg(short = 'i', long = "inode")]
@@ -291,14 +321,21 @@ impl Args {
         self.long || self.numeric_uid_gid || self.no_owner || self.no_group_short || self.full_time
     }
 
-    /// Sort key. `--sort` wins; with -l, -u/-c only change the displayed time.
+    /// Sort key precedence: --sort=WORD, -U, -S, -t, -v, -X, then name.
+    /// With -l, -u/-c only change the displayed time.
     pub fn sort_field(&self) -> SortField {
         if let Some(s) = self.sort {
             s
+        } else if self.sort_none {
+            SortField::None
         } else if self.sort_size {
             SortField::Size
         } else if self.sort_time || ((self.sort_access || self.sort_change) && !self.is_long()) {
             SortField::Time
+        } else if self.sort_version {
+            SortField::Version
+        } else if self.sort_extension {
+            SortField::Extension
         } else {
             SortField::Name
         }
@@ -424,6 +461,36 @@ mod tests {
             SortField::Extension
         );
         assert_eq!(parse(&["--sort=none"]).sort_field(), SortField::None);
+    }
+
+    #[test]
+    fn test_sort_short_options_and_precedence() {
+        assert_eq!(parse(&["-v"]).sort_field(), SortField::Version);
+        assert_eq!(parse(&["-X"]).sort_field(), SortField::Extension);
+        assert_eq!(parse(&["-U"]).sort_field(), SortField::None);
+        assert_eq!(parse(&["-vX"]).sort_field(), SortField::Version);
+        assert_eq!(parse(&["-tv"]).sort_field(), SortField::Time);
+        assert_eq!(parse(&["-StvX"]).sort_field(), SortField::Size);
+        assert_eq!(parse(&["-UStvX"]).sort_field(), SortField::None);
+        assert_eq!(
+            parse(&["--sort=version", "-U"]).sort_field(),
+            SortField::Version
+        );
+    }
+
+    #[test]
+    fn test_grouping_and_filter_options() {
+        let args = parse(&[
+            "--group-directories-first",
+            "-I",
+            "*.tmp",
+            "--ignore=*.bak",
+            "--hide=*.o",
+            "-B",
+        ]);
+        assert!(args.group_directories_first && args.ignore_backups);
+        assert_eq!(args.ignore, ["*.tmp", "*.bak"]);
+        assert_eq!(args.hide, ["*.o"]);
     }
 
     #[test]

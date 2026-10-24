@@ -23,6 +23,18 @@ List directories themselves, not their contents.
 .TP
 \fB\-R\fR, \fB\-\-recursive\fR
 List subdirectories recursively. Symbolic links to directories are not followed, so link cycles cannot loop.
+.SS "Filtering"
+.TP
+\fB\-I\fR, \fB\-\-ignore\fR=\fIPATTERN\fR
+Do not list entries whose name matches the shell \fIPATTERN\fR. May be repeated. It applies even with \fB\-a\fR and \fB\-A\fR.
+.TP
+\fB\-\-hide\fR=\fIPATTERN\fR
+Like \fB\-I\fR, but \fB\-a\fR and \fB\-A\fR override it.
+.TP
+\fB\-B\fR, \fB\-\-ignore\-backups\fR
+Do not list entries whose name ends with \fB~\fR.
+.PP
+Patterns support \fB*\fR, \fB?\fR, \fB[abc]\fR, \fB[a\-z]\fR, \fB[!abc]\fR and backslash escapes. They are matched against the whole name, a leading dot is not special, and they never apply to files named on the command line.
 .SS "Format"
 .TP
 \fB\-1\fR
@@ -89,11 +101,23 @@ With \fB\-lt\fR: sort by, and show, access time. With \fB\-l\fR: show access tim
 \fB\-c\fR
 With \fB\-lt\fR: sort by, and show, status change time (ctime). With \fB\-l\fR: show ctime and sort by name. Otherwise: sort by ctime, newest first.
 .TP
+\fB\-v\fR
+Natural sort of version numbers: runs of digits compare by value, so \fIfile2\fR comes before \fIfile10\fR.
+.TP
+\fB\-X\fR
+Sort alphabetically by extension, then by name.
+.TP
+\fB\-U\fR
+Do not sort; list entries in directory order.
+.TP
+\fB\-\-group\-directories\-first\fR
+List directories before other entries. This is done after sorting and reversing, so \fB\-r\fR does not move directories to the end.
+.TP
 \fB\-r\fR, \fB\-\-reverse\fR
 Reverse the order while sorting, including ties.
 .TP
 \fB\-\-sort\fR=\fIWORD\fR
-Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBextension\fR. This overrides \fB\-S\fR and \fB\-t\fR.
+Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBversion\fR, \fBextension\fR. When several sort options are given the order of precedence is \fB\-\-sort\fR, \fB\-U\fR, \fB\-S\fR, \fB\-t\fR, \fB\-v\fR, \fB\-X\fR.
 .PP
 Names are compared bytewise, as with \fBLC_ALL=C ls\fR. Ties in size and time are broken by name. Directories are not grouped first.
 .SS "Time"
@@ -204,7 +228,7 @@ List \fIsrc\fR and all its subdirectories.
 \fBeka \-\-color=always | less \-R\fR
 Page colored output.
 .SH NOTES
-Not implemented yet: \fB\-q \-b \-N \-Q\fR and quoting of unusual names, \fB\-v \-X \-U \-I\fR, \fB\-\-hide\fR, \fB\-\-group\-directories\-first\fR, \fB\-\-author\fR, \fB\-\-si\fR. File names are written as they are, without escaping control characters. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
+Not implemented yet: \fB\-q \-b \-N \-Q\fR and quoting of unusual names, \fB\-\-author\fR, \fB\-\-si\fR. File names are written as they are, without escaping control characters. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
 .SH AUTHOR
 Alejandro Lopez Monzon.
 .SH BUGS

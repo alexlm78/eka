@@ -2,6 +2,7 @@ mod cli;
 mod colors;
 mod directory;
 mod formatter;
+mod glob;
 mod layout;
 mod types;
 
