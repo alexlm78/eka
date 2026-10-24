@@ -1,0 +1,129 @@
+name: Release
+
+# Publishes a GitHub release when a version tag is pushed:
+#   git tag v0.3.0 && git push origin v0.3.0
+# The tag must match the version in Cargo.toml and CHANGELOG.md must have a
+# section for it.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        name: Check the tag against Cargo.toml and the changelog
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          crate=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [ "$version" != "$crate" ]; then
+            echo "::error::tag $tag does not match Cargo.toml version $crate"
+            exit 1
+          fi
+          scripts/release-notes.sh "$version" >/dev/null
+          case "$version" in
+            0.*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format, lint and test
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, smoke: true }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, smoke: true }
+          - { os: macos-14, target: aarch64-apple-darwin, smoke: true }
+          - { os: macos-14, target: x86_64-apple-darwin, smoke: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Smoke test
+        if: matrix.smoke
+        run: |
+          bin=target/${{ matrix.target }}/release/eka
+          "$bin" --version
+          "$bin" -l . >/dev/null
+      - name: Package
+        run: |
+          scripts/package.sh "${{ needs.verify.outputs.version }}" "${{ matrix.target }}" \
+            "target/${{ matrix.target }}/release/eka" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eka-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: [verify, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: eka-*
+          merge-multiple: true
+      - name: Combine the checksums
+        working-directory: dist
+        run: |
+          cat ./*.sha256 | sort -k 2 > SHA256SUMS
+          rm ./*.tar.gz.sha256
+          sha256sum --check SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          scripts/release-notes.sh "$VERSION" > notes.md
+          flags=""
+          if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "eka $VERSION" \
+            --notes-file notes.md \
+            --verify-tag \
+            $flags
