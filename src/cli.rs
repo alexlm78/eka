@@ -1,3 +1,5 @@
+use crate::quoting::QuotingStyle;
+use chrono::format::{Item, StrftimeItems};
 use clap::{ArgAction, Parser, ValueEnum, ValueHint};
 use std::str::FromStr;
 
@@ -50,7 +52,14 @@ impl FromStr for TimeStyle {
             "iso" => Ok(Self::Iso),
             "long-iso" => Ok(Self::LongIso),
             "full-iso" => Ok(Self::FullIso),
-            _ if value.starts_with('+') => Ok(Self::Custom(value[1..].to_string())),
+            _ if value.starts_with('+') => {
+                let format = &value[1..];
+                // chrono panics when formatting with a specifier it does not know
+                if StrftimeItems::new(format).any(|item| item == Item::Error) {
+                    return Err("invalid --time-style format".to_string());
+                }
+                Ok(Self::Custom(format.to_string()))
+            }
             _ => Err("invalid --time-style argument".to_string()),
         }
     }
@@ -278,6 +287,30 @@ pub struct Args {
     #[arg(short = 'B', long = "ignore-backups")]
     pub ignore_backups: bool,
 
+    /// Print entry names without quoting
+    #[arg(short = 'N', long = "literal")]
+    pub literal: bool,
+
+    /// Print C-style escapes for nongraphic characters
+    #[arg(short = 'b', long = "escape")]
+    pub escape: bool,
+
+    /// Enclose entry names in double quotes
+    #[arg(short = 'Q', long = "quote-name")]
+    pub quote_name: bool,
+
+    /// Print ? instead of nongraphic characters
+    #[arg(short = 'q', long = "hide-control-chars")]
+    pub hide_control_chars: bool,
+
+    /// Show nongraphic characters as is (the default when not a terminal)
+    #[arg(long = "show-control-chars")]
+    pub show_control_chars: bool,
+
+    /// Use quoting style WORD for entry names
+    #[arg(long = "quoting-style", value_enum, value_name = "WORD")]
+    pub quoting_style: Option<QuotingStyle>,
+
     /// Print the index number of each file
     #[arg(short = 'i', long = "inode")]
     pub inode: bool,
@@ -388,6 +421,26 @@ impl Args {
         terminal_size::terminal_size().map_or(80, |(w, _)| w.0 as usize)
     }
 
+    /// Quoting style. Precedence: --quoting-style, -Q, -b, -N, $QUOTING_STYLE;
+    /// the default is `shell-escape` on a terminal and `literal` otherwise.
+    pub fn quoting_style(&self, stdout_is_tty: bool) -> QuotingStyle {
+        select_quoting_style(
+            self,
+            stdout_is_tty,
+            std::env::var("QUOTING_STYLE").ok().as_deref(),
+        )
+    }
+
+    /// Whether unprintable characters print as `?` in the styles that show
+    /// them: -q, or by default on a terminal; --show-control-chars turns it off.
+    pub fn hide_control(&self, stdout_is_tty: bool) -> bool {
+        if self.show_control_chars {
+            false
+        } else {
+            self.hide_control_chars || stdout_is_tty
+        }
+    }
+
     /// True when hidden entries are listed (-a or -A)
     pub fn show_hidden(&self) -> bool {
         self.all || self.almost_all
@@ -415,6 +468,24 @@ impl Args {
     /// Whether -p requests directory slash indicators.
     pub fn slash_indicator(&self) -> bool {
         self.indicator_style.as_deref() == Some("slash")
+    }
+}
+
+fn select_quoting_style(args: &Args, tty: bool, environment: Option<&str>) -> QuotingStyle {
+    if let Some(style) = args.quoting_style {
+        style
+    } else if args.quote_name {
+        QuotingStyle::C
+    } else if args.escape {
+        QuotingStyle::Escape
+    } else if args.literal {
+        QuotingStyle::Literal
+    } else if let Some(style) = environment.and_then(|v| QuotingStyle::from_str(v, true).ok()) {
+        style
+    } else if tty {
+        QuotingStyle::ShellEscape
+    } else {
+        QuotingStyle::Literal
     }
 }
 
@@ -550,6 +621,35 @@ mod tests {
     }
 
     #[test]
+    fn test_quoting_style_defaults_and_precedence() {
+        let style = |a: &[&str], tty, env| select_quoting_style(&parse(a), tty, env);
+        assert_eq!(style(&[], false, None), QuotingStyle::Literal);
+        assert_eq!(style(&[], true, None), QuotingStyle::ShellEscape);
+        assert_eq!(style(&["-N"], true, None), QuotingStyle::Literal);
+        assert_eq!(style(&["-b"], false, None), QuotingStyle::Escape);
+        assert_eq!(style(&["-Q"], false, None), QuotingStyle::C);
+        assert_eq!(style(&["-Q", "-b"], false, None), QuotingStyle::C);
+        assert_eq!(
+            style(&["-Q", "--quoting-style=shell"], false, None),
+            QuotingStyle::Shell
+        );
+        // environment sits below the options and above the default
+        assert_eq!(style(&[], true, Some("c")), QuotingStyle::C);
+        assert_eq!(style(&["-b"], true, Some("c")), QuotingStyle::Escape);
+        assert_eq!(style(&[], true, Some("bogus")), QuotingStyle::ShellEscape);
+        assert!(Args::try_parse_from(["eka", "--quoting-style=nope"]).is_err());
+    }
+
+    #[test]
+    fn test_hide_control_defaults() {
+        assert!(!parse(&[]).hide_control(false));
+        assert!(parse(&[]).hide_control(true));
+        assert!(parse(&["-q"]).hide_control(false));
+        assert!(!parse(&["--show-control-chars"]).hide_control(true));
+        assert!(!parse(&["-q", "--show-control-chars"]).hide_control(true));
+    }
+
+    #[test]
     fn test_gnu_long_options() {
         let a = parse(&[
             "--all",
@@ -608,6 +708,11 @@ mod tests {
         );
         assert_eq!("+%F".parse(), Ok(TimeStyle::Custom("%F".to_string())));
         assert!("bad".parse::<TimeStyle>().is_err());
+        // formats chrono cannot render are rejected up front, not at print time
+        assert!("+%Q".parse::<TimeStyle>().is_err());
+        assert!("+%".parse::<TimeStyle>().is_err());
+        assert!("+%Y-%m-%d %H:%M:%S".parse::<TimeStyle>().is_ok());
+        assert!("+recent %H:%M\nold %Y".parse::<TimeStyle>().is_ok());
         assert_eq!(
             select_time_style(Some(&TimeStyle::Iso), false, Some("full-iso")),
             TimeStyle::Iso

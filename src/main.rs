@@ -1,18 +1,21 @@
+#![forbid(unsafe_code)]
+
 mod cli;
 mod colors;
 mod directory;
 mod formatter;
 mod glob;
 mod layout;
+mod quoting;
 mod types;
 
 use clap::Parser;
 use cli::Args;
-use directory::{io_message, read_directory, read_directory_recursive};
+use directory::{io_message, read_directory, read_directory_recursive, shown};
 use formatter::Formatter;
 use std::fs;
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 use types::FileEntry;
 
@@ -83,12 +86,12 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
             ) {
                 Ok(e) => files.push(e),
                 Err(e) => {
-                    eprintln!("eka: cannot access '{}': {}", path, io_message(&e));
+                    eprintln!("eka: cannot access {}: {}", shown(p), io_message(&e));
                     status = EXIT_SERIOUS;
                 }
             },
             Err(e) => {
-                eprintln!("eka: cannot access '{}': {}", path, io_message(&e));
+                eprintln!("eka: cannot access {}: {}", shown(p), io_message(&e));
                 status = EXIT_SERIOUS;
             }
         }
@@ -110,7 +113,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
         } else {
             read_directory(Path::new(path), args, &mut had_error).map(|entries| {
                 vec![directory::DirectoryEntry {
-                    path: path.to_string(),
+                    path: PathBuf::from(path),
                     entries,
                 }]
             })
@@ -123,7 +126,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
                     }
                     first = false;
                     if show_names {
-                        writeln!(out, "{}:", d.path)?;
+                        fmt.write_heading(out, &d.path)?;
                     }
                     if args.is_long() || args.size {
                         fmt.write_total(out, &d.entries)?;
@@ -132,7 +135,11 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
                 }
             }
             Err(e) => {
-                eprintln!("eka: cannot open directory '{}': {}", path, io_message(&e));
+                eprintln!(
+                    "eka: cannot open directory {}: {}",
+                    shown(Path::new(path)),
+                    io_message(&e)
+                );
                 status = EXIT_SERIOUS;
             }
         }

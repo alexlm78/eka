@@ -161,18 +161,23 @@ impl Painter {
         Self { palette }
     }
 
-    /// Writes the raw name bytes, wrapped in the entry's color if any
-    pub fn write_name(&self, out: &mut impl Write, entry: &FileEntry) -> io::Result<()> {
-        let name = entry.name.as_bytes();
+    /// Writes `shown` (the already quoted name), wrapped in the entry's
+    /// color if any. The color is chosen from the raw name, not from `shown`.
+    pub fn write_name(
+        &self,
+        out: &mut impl Write,
+        entry: &FileEntry,
+        shown: &[u8],
+    ) -> io::Result<()> {
         let code = self
             .palette
             .as_ref()
-            .map_or("", |p| p.code_for(entry.file_type, name));
+            .map_or("", |p| p.code_for(entry.file_type, entry.name.as_bytes()));
         if code.is_empty() {
-            out.write_all(name)
+            out.write_all(shown)
         } else {
             write!(out, "\x1b[{}m", code)?;
-            out.write_all(name)?;
+            out.write_all(shown)?;
             out.write_all(b"\x1b[0m")
         }
     }
@@ -238,12 +243,14 @@ mod tests {
     fn test_painter_plain_and_colored() {
         let e = entry("dir", FileType::Directory);
         let mut plain = Vec::new();
-        Painter::new(None).write_name(&mut plain, &e).unwrap();
+        Painter::new(None)
+            .write_name(&mut plain, &e, e.name.as_bytes())
+            .unwrap();
         assert_eq!(plain, b"dir");
 
         let mut colored = Vec::new();
         Painter::new(Some(Palette::eka()))
-            .write_name(&mut colored, &e)
+            .write_name(&mut colored, &e, e.name.as_bytes())
             .unwrap();
         assert_eq!(colored, b"\x1b[36mdir\x1b[0m");
     }
@@ -253,7 +260,7 @@ mod tests {
         let e = entry("plain", FileType::Regular);
         let mut buf = Vec::new();
         Painter::new(Some(Palette::eka()))
-            .write_name(&mut buf, &e)
+            .write_name(&mut buf, &e, e.name.as_bytes())
             .unwrap();
         assert_eq!(buf, b"plain");
     }

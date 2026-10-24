@@ -6,12 +6,12 @@ Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It
 
 ## Features
 
-- **GNU-compatible flags and output**: `-1 -C -x -m -w -a -A -B -d -F -p -h -i -s -k -l -n -g -o -G -L -H -P -R -r -S -t -u -c -v -X -U -I --hide --group-directories-first --sort --time --time-style --full-time --block-size --color`
+- **GNU-compatible flags and output**: `-1 -C -x -m -w -a -A -B -d -F -p -h -i -s -k -l -n -g -o -G -L -H -P -R -r -S -t -u -c -v -X -U -I --hide --group-directories-first --sort --time --time-style --full-time --block-size --color -N -b -Q -q --show-control-chars --quoting-style`
 - **Columns**: multi-column output on terminals (`-C`, `-x`, `-m`, `-w`), one entry per line when piped
 - **Real owner and group names**, cached per run, with numeric fallback
 - **Correct long format**: no header row, columns sized to fit, `total` in 1 KiB blocks, `Mon DD HH:MM` for recent files and `Mon DD  YYYY` for older ones
 - **Faithful file model**: symlinks are not followed unless asked (`-L`, `-H`), broken links are listed, and fifo, socket and device files show the right type and setuid/setgid/sticky bits
-- **Raw file names**: names that are not valid UTF-8 are written byte for byte
+- **Safe output**: on a terminal, names are quoted so that control characters, escape sequences and bidirectional overrides cannot alter what you see; names that are not valid UTF-8 are preserved (see [Safe output](#safe-output))
 - **Color**: automatic on terminals, honors `NO_COLOR` and `LS_COLORS`
 - **Buffered output**: one locked, buffered write path; a closed pipe (`eka | head`) exits quietly
 - **Unix only**: macOS and Linux
@@ -96,6 +96,12 @@ When several paths are given, files are listed first, then each directory under 
 | `--time=WORD` | Show and sort by `atime` (`access`, `use`), `ctime` (`status`) or `mtime` (`modification`) |
 | `--time-style=STYLE` | `full-iso`, `long-iso`, `iso`, `locale` or `+FORMAT` (a `strftime` format; a newline splits the recent and old formats). `$TIME_STYLE` is the default |
 | `--full-time` | Like `-l --time-style=full-iso` |
+| `-N`, `--literal` | Print names as they are |
+| `-b`, `--escape` | Print C-style backslash escapes for unusual characters |
+| `-Q`, `--quote-name` | Enclose names in double quotes, with C escapes |
+| `-q`, `--hide-control-chars` | Print `?` instead of unprintable characters |
+| `--show-control-chars` | Print unprintable characters as they are (the default when output is not a terminal) |
+| `--quoting-style=WORD` | `literal`, `shell`, `shell-always`, `shell-escape`, `shell-escape-always`, `c` or `escape` |
 | `--color[=WHEN]` | `always`, `auto` (default) or `never`; plain `--color` means `always` |
 | `--help` | Print help |
 | `-V`, `--version` | Print the version |
@@ -111,6 +117,18 @@ Patterns for `-I` and `--hide` support `*`, `?`, `[abc]`, `[a-z]`, `[!abc]` and 
 | 0 | Success |
 | 1 | Minor problem, such as an unreadable entry inside a listed directory |
 | 2 | Serious problem, such as a path on the command line that cannot be accessed |
+
+## Safe output
+
+File names are arbitrary bytes, and a name such as `evil\x1b[2J` or `report\u202etxt.exe` can clear the screen, change the window title or disguise a file type when it is printed raw. Eka follows GNU `ls` here:
+
+- **On a terminal** the default quoting style is `shell-escape`: a name that the shell would need quoted is wrapped in single quotes, and unprintable characters appear as `$'\033'`-style escapes, so every name can be copied back into a shell. Unquoted names get one leading space when others are quoted, so the names line up.
+- **When output is not a terminal** (a pipe or a file) names are written as they are, because the output is data for another program. Use `-b`, `-Q`, `-q` or `--quoting-style` to escape them anyway, or set `QUOTING_STYLE` in the environment.
+- **Unprintable** means control characters (C0, DEL, C1), the bidirectional overrides and isolates (U+202A-202E, U+2066-2069, U+200E, U+200F, U+061C), the line and paragraph separators, and bytes that are not valid UTF-8.
+- Link targets and the `path:` headings of `-R` and multi-path listings are quoted the same way.
+- **Error messages** always quote the paths they mention, even when standard error is not a terminal.
+- `-R` cannot loop: a directory that is its own ancestor (possible with `-L`) is reported as `not listing already-listed directory` and skipped.
+- The program contains no `unsafe` code (`#![forbid(unsafe_code)]`), and unrepresentable timestamps print as `?` instead of aborting the listing.
 
 ## Color
 
@@ -135,8 +153,8 @@ If `LS_COLORS` is set, Eka uses it (keys `di ln ex or pi so bd cd fi` and `*.ext
 
 ## Known differences from GNU `ls`
 
-- Not implemented yet: `-q -b -N -Q` and `ls`-style quoting of unusual names, `--author`, `--si`, `-D`, `-Z`.
-- Names are not escaped, so a name with control characters is written as is.
+- Not implemented yet: `--author`, `--si`, `-D`, `-Z`.
+- Shell quoting always uses single quotes (`'it'\\''s'`), where GNU may use double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.
 - `-C` pads with spaces; GNU may use tabs.
 - Column widths count code points, so wide (CJK) characters are not measured correctly.
 - `total` counts 1 KiB blocks, as GNU does; the BSD/macOS `ls` counts 512-byte blocks.
@@ -161,6 +179,7 @@ eka/
     ├── formatter.rs      # Short and long output, sizes, dates, totals, owner names
     ├── layout.rs         # Column layout arithmetic (-C, -x, -m)
     ├── glob.rs           # Shell pattern matcher for -I and --hide
+    ├── quoting.rs        # Name quoting and escaping (-b -Q -q --quoting-style)
     ├── colors.rs         # Palette, LS_COLORS parsing, color decision
     └── types.rs          # FileEntry (lstat based) and file type model
 ```

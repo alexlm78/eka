@@ -1,17 +1,20 @@
 use crate::cli::{Args, SortField};
 use crate::glob;
+use crate::quoting::quote_for_message;
 use crate::types::FileEntry;
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Recursive directory entry with path information
 #[derive(Debug, Clone)]
 pub struct DirectoryEntry {
-    pub path: String,
+    pub path: PathBuf,
     pub entries: Vec<FileEntry>,
 }
 
@@ -40,9 +43,8 @@ pub fn read_directory(
                 Ok(_) => {}
                 Err(e) => {
                     eprintln!(
-                        "eka: cannot access '{}/{}': {}",
-                        path.display(),
-                        dot,
+                        "eka: cannot access {}: {}",
+                        shown(&path.join(dot)),
                         io_message(&e)
                     );
                     *had_error = true;
@@ -55,7 +57,7 @@ pub fn read_directory(
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("eka: reading '{}': {}", path.display(), io_message(&e));
+                eprintln!("eka: reading {}: {}", shown(path), io_message(&e));
                 *had_error = true;
                 continue;
             }
@@ -65,8 +67,8 @@ pub fn read_directory(
             Ok(_) => {}
             Err(e) => {
                 eprintln!(
-                    "eka: cannot access '{}': {}",
-                    entry.path().display(),
+                    "eka: cannot access {}: {}",
+                    shown(&entry.path()),
                     io_message(&e)
                 );
                 *had_error = true;
@@ -101,34 +103,91 @@ fn should_list(entry: &FileEntry, args: &Args) -> bool {
             .any(|pattern| glob::matches(pattern.as_bytes(), name))
 }
 
-/// Reads a directory and all subdirectories (symlinks are not followed, so no cycles)
+/// A directory on the path from the listing root, for cycle detection
+struct Ancestor {
+    id: (u64, u64),
+    parent: Option<Rc<Ancestor>>,
+}
+
+impl Ancestor {
+    fn contains(node: &Option<Rc<Ancestor>>, id: (u64, u64)) -> bool {
+        let mut cur = node.as_deref();
+        while let Some(n) = cur {
+            if n.id == id {
+                return true;
+            }
+            cur = n.parent.as_deref();
+        }
+        false
+    }
+}
+
+/// (device, inode) of what `path` points to
+fn dir_id(path: &Path) -> io::Result<(u64, u64)> {
+    let m = fs::metadata(path)?;
+    Ok((m.dev(), m.ino()))
+}
+
+/// Quotes a path for a diagnostic so it cannot inject terminal escapes
+pub fn shown(path: &Path) -> String {
+    quote_for_message(path.as_os_str().as_bytes())
+}
+
+/// Reads a directory and all subdirectories, depth first, in listing order.
+/// Iterative, so a deep tree cannot overflow the stack, and a directory that
+/// is its own ancestor (possible with -L) is reported and skipped.
 pub fn read_directory_recursive(
     path: &Path,
     args: &Args,
     had_error: &mut bool,
 ) -> io::Result<Vec<DirectoryEntry>> {
-    let mut result = Vec::new();
-    let entries = read_directory(path, args, had_error)?;
-    let subdirs: Vec<PathBuf> = entries
-        .iter()
-        .filter(|e| e.file_type.is_dir() && e.name != "." && e.name != "..")
-        .map(|e| e.path.clone())
-        .collect();
-    result.push(DirectoryEntry {
-        path: path.display().to_string(),
-        entries,
+    let root = Rc::new(Ancestor {
+        id: dir_id(path)?,
+        parent: None,
     });
+    let mut result = Vec::new();
+    let mut stack = vec![(path.to_path_buf(), root)];
 
-    for sub in subdirs {
-        match read_directory_recursive(&sub, args, had_error) {
-            Ok(v) => result.extend(v),
+    while let Some((dir, chain)) = stack.pop() {
+        let entries = match read_directory(&dir, args, had_error) {
+            Ok(entries) => entries,
+            // The root failing is the caller's error; deeper ones are reported
+            Err(e) if result.is_empty() => return Err(e),
             Err(e) => {
                 eprintln!(
-                    "eka: cannot open directory '{}': {}",
-                    sub.display(),
+                    "eka: cannot open directory {}: {}",
+                    shown(&dir),
                     io_message(&e)
                 );
                 *had_error = true;
+                continue;
+            }
+        };
+        let subdirs: Vec<PathBuf> = entries
+            .iter()
+            .filter(|e| e.file_type.is_dir() && e.name != "." && e.name != "..")
+            .map(|e| e.path.clone())
+            .collect();
+        result.push(DirectoryEntry { path: dir, entries });
+
+        // Pushed in reverse so they pop in listing order
+        for sub in subdirs.into_iter().rev() {
+            match dir_id(&sub) {
+                Ok(id) if Ancestor::contains(&Some(chain.clone()), id) => {
+                    eprintln!("eka: {}: not listing already-listed directory", shown(&sub));
+                    *had_error = true;
+                }
+                Ok(id) => {
+                    let node = Rc::new(Ancestor {
+                        id,
+                        parent: Some(chain.clone()),
+                    });
+                    stack.push((sub, node));
+                }
+                Err(e) => {
+                    eprintln!("eka: cannot access {}: {}", shown(&sub), io_message(&e));
+                    *had_error = true;
+                }
             }
         }
     }
@@ -510,5 +569,74 @@ mod tests {
         assert_eq!(dirs.len(), 2);
         assert!(!err);
         fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_recursive_order_is_depth_first_in_listing_order() {
+        let d = tmp("rorder");
+        for p in ["a/x", "a/y", "b", "c/z"] {
+            fs::create_dir_all(d.join(p)).unwrap();
+        }
+        let mut err = false;
+        let args = Args {
+            recursive: true,
+            ..Default::default()
+        };
+        let dirs = read_directory_recursive(&d, &args, &mut err).unwrap();
+        let rel: Vec<String> = dirs
+            .iter()
+            .map(|e| e.path.strip_prefix(&d).unwrap().display().to_string())
+            .collect();
+        assert_eq!(rel, ["", "a", "a/x", "a/y", "b", "c", "c/z"]);
+        assert!(!err);
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_recursive_dereference_cycle_is_reported_once_and_terminates() {
+        let d = tmp("rcycle");
+        fs::create_dir(d.join("sub")).unwrap();
+        std::os::unix::fs::symlink("..", d.join("sub/up")).unwrap();
+        std::os::unix::fs::symlink(".", d.join("self")).unwrap();
+        let mut err = false;
+        let args = Args {
+            recursive: true,
+            deref_all: true,
+            ..Default::default()
+        };
+        let dirs = read_directory_recursive(&d, &args, &mut err).unwrap();
+        // the root and sub are listed; both links point back to an ancestor
+        assert_eq!(dirs.len(), 2);
+        assert!(err);
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_recursive_dereference_lists_a_linked_directory_listed_twice() {
+        // two links to one directory are not a cycle: GNU lists it under both
+        let d = tmp("rtwice");
+        fs::create_dir_all(d.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", d.join("l1")).unwrap();
+        std::os::unix::fs::symlink("real", d.join("l2")).unwrap();
+        let mut err = false;
+        let args = Args {
+            recursive: true,
+            deref_all: true,
+            ..Default::default()
+        };
+        let dirs = read_directory_recursive(&d, &args, &mut err).unwrap();
+        assert_eq!(dirs.len(), 4);
+        assert!(!err);
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_recursive_root_failure_is_returned_not_reported() {
+        let mut err = false;
+        let args = Args {
+            recursive: true,
+            ..Default::default()
+        };
+        assert!(read_directory_recursive(Path::new("/nonexistent-eka"), &args, &mut err).is_err());
     }
 }

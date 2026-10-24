@@ -119,12 +119,16 @@ pub struct FileEntry {
 }
 
 fn unix_time(secs: i64, nsecs: i64) -> SystemTime {
-    if secs >= 0 {
-        SystemTime::UNIX_EPOCH + Duration::new(secs as u64, nsecs as u32)
+    // Checked, so a bogus timestamp from the filesystem cannot panic the listing
+    let nanos = Duration::from_nanos(nsecs.clamp(0, 999_999_999) as u64);
+    let shifted = if secs >= 0 {
+        SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs as u64))
     } else {
-        SystemTime::UNIX_EPOCH - Duration::from_secs(secs.unsigned_abs())
-            + Duration::from_nanos(nsecs as u64)
-    }
+        SystemTime::UNIX_EPOCH.checked_sub(Duration::from_secs(secs.unsigned_abs()))
+    };
+    shifted
+        .and_then(|t| t.checked_add(nanos))
+        .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
 impl FileEntry {
@@ -354,5 +358,23 @@ mod tests {
         let e = FileEntry::from_path(f).unwrap();
         assert!(e.changed > SystemTime::UNIX_EPOCH);
         fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_unix_time_never_panics_on_extreme_values() {
+        for secs in [i64::MIN, i64::MIN + 1, -1, 0, 1, i64::MAX - 1, i64::MAX] {
+            for nsecs in [i64::MIN, -1, 0, 999_999_999, 1_000_000_000, i64::MAX] {
+                let _ = unix_time(secs, nsecs);
+            }
+        }
+        assert_eq!(unix_time(0, 0), SystemTime::UNIX_EPOCH);
+        assert_eq!(
+            unix_time(-5, 500_000_000),
+            SystemTime::UNIX_EPOCH - Duration::from_millis(4_500)
+        );
+        assert_eq!(
+            unix_time(10, 1),
+            SystemTime::UNIX_EPOCH + Duration::new(10, 1)
+        );
     }
 }

@@ -1,8 +1,11 @@
 use crate::cli::{Args, Layout, TimeStyle};
 use crate::colors::{Painter, Palette, color_enabled};
 use crate::layout;
+use crate::quoting::Quoter;
 use crate::types::FileEntry;
 use chrono::{DateTime, Local, Timelike};
+use std::cell::Cell;
+use std::fmt::Write as _;
 use std::io::{self, IsTerminal, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::time::{Duration, SystemTime};
@@ -20,12 +23,16 @@ pub struct Formatter<'a> {
     width: usize,
     /// Caches uid/gid lookups for the lifetime of the run
     users: UsersCache,
+    quoter: Quoter,
+    /// Set per listing: some name is quoted, so unquoted ones get a leading space
+    pad_unquoted: Cell<bool>,
 }
 
 impl<'a> Formatter<'a> {
     pub fn new(args: &'a Args) -> Self {
         let palette = color_enabled(args.color).then(Palette::from_env);
-        let layout = args.layout(io::stdout().is_terminal());
+        let tty = io::stdout().is_terminal();
+        let layout = args.layout(tty);
         // Only column layouts need the terminal width
         let width = match layout {
             Layout::Columns | Layout::Across | Layout::Commas => args.line_width(),
@@ -38,6 +45,8 @@ impl<'a> Formatter<'a> {
             layout,
             width,
             users: UsersCache::new(),
+            quoter: Quoter::new(args.quoting_style(tty), args.hide_control(tty)),
+            pad_unquoted: Cell::new(false),
         }
     }
 
@@ -45,6 +54,8 @@ impl<'a> Formatter<'a> {
     pub fn format_short(&self, out: &mut impl Write, entries: &[FileEntry]) -> io::Result<()> {
         let inode_w = self.inode_width(entries);
         let size_w = self.block_width(entries);
+        // GNU ls does not align names in the comma format
+        self.set_alignment(entries, self.layout != Layout::Commas);
         match self.layout {
             Layout::Columns => self.write_grid(out, entries, inode_w, size_w, false),
             Layout::Across => self.write_grid(out, entries, inode_w, size_w, true),
@@ -131,7 +142,7 @@ impl<'a> Formatter<'a> {
         if self.args.size {
             write!(out, "{:>size_w$} ", self.allocated_size(entry))?;
         }
-        self.painter.write_name(out, entry)?;
+        self.write_name(out, entry)?;
         self.write_indicator(out, entry)
     }
 
@@ -146,7 +157,44 @@ impl<'a> Formatter<'a> {
         } else {
             0
         };
-        inode + size + name_width(entry.name.as_bytes()) + indicator
+        inode + size + self.name_cells(entry) + indicator
+    }
+
+    /// Records whether this listing mixes quoted and unquoted names
+    fn set_alignment(&self, entries: &[FileEntry], enabled: bool) {
+        let mixed = enabled
+            && self.quoter.aligns()
+            && entries
+                .iter()
+                .any(|e| self.quoter.is_quoted(e.name.as_bytes()));
+        self.pad_unquoted.set(mixed);
+    }
+
+    /// Whether this name gets the alignment space
+    fn needs_pad(&self, name: &[u8]) -> bool {
+        self.pad_unquoted.get() && !self.quoter.is_quoted(name)
+    }
+
+    /// Display columns of the quoted name, with its alignment space
+    fn name_cells(&self, entry: &FileEntry) -> usize {
+        let name = entry.name.as_bytes();
+        name_width(&self.quoter.quote(name)) + usize::from(self.needs_pad(name))
+    }
+
+    /// Writes the quoted, colored name preceded by the alignment space if needed
+    fn write_name(&self, out: &mut impl Write, entry: &FileEntry) -> io::Result<()> {
+        let name = entry.name.as_bytes();
+        if self.needs_pad(name) {
+            out.write_all(b" ")?;
+        }
+        self.painter
+            .write_name(out, entry, &self.quoter.quote(name))
+    }
+
+    /// Writes a directory heading such as `src:` with the path quoted
+    pub fn write_heading(&self, out: &mut impl Write, path: &std::path::Path) -> io::Result<()> {
+        out.write_all(&self.quoter.quote(path.as_os_str().as_bytes()))?;
+        out.write_all(b":\n")
     }
 
     /// Prints entries in long format. No header row, columns sized to fit.
@@ -165,6 +213,7 @@ impl<'a> Formatter<'a> {
                 .unwrap_or(0),
         );
         let inode_w = self.inode_width(entries);
+        self.set_alignment(entries, true);
 
         for (entry, row) in entries.iter().zip(&rows) {
             if self.args.inode {
@@ -181,10 +230,10 @@ impl<'a> Formatter<'a> {
                 write_padded(out, &row.group, group_w)?;
             }
             write!(out, " {:>size_w$} {} ", row.size, row.time)?;
-            self.painter.write_name(out, entry)?;
+            self.write_name(out, entry)?;
             if let Some(target) = &entry.symlink_target {
                 out.write_all(b" -> ")?;
-                out.write_all(target.as_bytes())?;
+                out.write_all(&self.quoter.quote(target.as_bytes()))?;
             } else {
                 self.write_indicator(out, entry)?;
             }
@@ -334,13 +383,32 @@ pub fn human_size(size: u64) -> String {
     format!("{}{}", whole, UNITS[unit])
 }
 
+/// Converts to local time without chrono's panicking `From<SystemTime>`, which
+/// fails outside roughly +-262,000 years. None when the time is unrepresentable.
+fn to_local(t: SystemTime) -> Option<DateTime<Local>> {
+    let (secs, nanos) = match t.duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(d) => (i64::try_from(d.as_secs()).ok()?, d.subsec_nanos()),
+        Err(e) => {
+            let d = e.duration();
+            let secs = i64::try_from(d.as_secs()).ok()?.checked_neg()?;
+            match d.subsec_nanos() {
+                0 => (secs, 0),
+                n => (secs.checked_sub(1)?, 1_000_000_000 - n),
+            }
+        }
+    };
+    DateTime::from_timestamp(secs, nanos).map(|utc| utc.with_timezone(&Local))
+}
+
 /// Formats timestamps using GNU ls's recent-file rule.
 pub fn format_time(t: SystemTime, now: SystemTime, style: &TimeStyle) -> String {
     let recent = now
         .checked_sub(SIX_MONTHS)
         .is_some_and(|cutoff| t >= cutoff)
         && t <= now;
-    let dt: DateTime<Local> = t.into();
+    let Some(dt) = to_local(t) else {
+        return "?".to_string();
+    };
     match style {
         TimeStyle::Locale => {
             if recent {
@@ -369,7 +437,12 @@ pub fn format_time(t: SystemTime, now: SystemTime, style: &TimeStyle) -> String 
                 (false, Some((_, old))) => old,
                 (_, None) => format,
             };
-            dt.format(format).to_string()
+            let mut shown = String::new();
+            match write!(shown, "{}", dt.format(format)) {
+                Ok(()) => shown,
+                // Validated when parsed; never panic on a format chrono rejects
+                Err(_) => "?".to_string(),
+            }
         }
     }
 }
@@ -786,5 +859,143 @@ mod tests {
             "old"
         );
         assert!(format_time(recent, now, &TimeStyle::FullIso).contains('.'));
+    }
+
+    use crate::quoting::QuotingStyle;
+
+    fn quoting_args(style: QuotingStyle) -> Args {
+        Args {
+            quoting_style: Some(style),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_shell_escape_aligns_unquoted_names_when_mixed() {
+        let out = render_with(
+            quoting_args(QuotingStyle::ShellEscape),
+            &names(&["a b", "plain"]),
+        );
+        assert_eq!(out, "'a b'\n plain\n");
+        // nothing quoted: no padding
+        let out = render_with(quoting_args(QuotingStyle::ShellEscape), &names(&["x", "y"]));
+        assert_eq!(out, "x\ny\n");
+        // always-quoting styles and the comma layout never pad
+        let out = render_with(
+            quoting_args(QuotingStyle::ShellEscapeAlways),
+            &names(&["a b", "plain"]),
+        );
+        assert_eq!(out, "'a b'\n'plain'\n");
+        let commas = Args {
+            commas: true,
+            width: Some(80),
+            ..quoting_args(QuotingStyle::ShellEscape)
+        };
+        assert_eq!(
+            render_with(commas, &names(&["a b", "plain"])),
+            "'a b', plain\n"
+        );
+    }
+
+    #[test]
+    fn test_hostile_names_are_escaped_in_every_layout() {
+        let hostile = names(&["x\x1b[2Jy", "ok"]);
+        for args in [
+            quoting_args(QuotingStyle::ShellEscape),
+            Args {
+                columns: true,
+                width: Some(80),
+                ..quoting_args(QuotingStyle::Escape)
+            },
+            Args {
+                commas: true,
+                width: Some(80),
+                ..quoting_args(QuotingStyle::C)
+            },
+        ] {
+            let out = render_with(args, &hostile);
+            assert!(!out.contains('\x1b'), "{out:?}");
+        }
+    }
+
+    #[test]
+    fn test_columns_measure_the_quoted_width() {
+        // 'a b' is 5 columns wide once quoted, so two cells need 5 + 2 + 5
+        let args = Args {
+            columns: true,
+            width: Some(12),
+            ..quoting_args(QuotingStyle::ShellAlways)
+        };
+        assert_eq!(render_with(args, &names(&["a b", "c d"])), "'a b'  'c d'\n");
+        let narrow = Args {
+            columns: true,
+            width: Some(11),
+            ..quoting_args(QuotingStyle::ShellAlways)
+        };
+        assert_eq!(
+            render_with(narrow, &names(&["a b", "c d"])),
+            "'a b'\n'c d'\n"
+        );
+    }
+
+    #[test]
+    fn test_long_format_quotes_name_and_link_target() {
+        let mut link = entry(b"my link");
+        link.file_type = FileType::Symlink;
+        link.symlink_target = Some("tg\x1bt".into());
+        let args = Args {
+            color: Some(crate::cli::ColorWhen::Never),
+            long: true,
+            ..quoting_args(QuotingStyle::ShellEscape)
+        };
+        let mut buf = Vec::new();
+        Formatter::new(&args)
+            .format_long(&mut buf, &[link])
+            .unwrap();
+        let out = String::from_utf8(buf).unwrap();
+        assert!(
+            out.trim_end().ends_with("'my link' -> 'tg'$'\\033''t'"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn test_heading_is_quoted() {
+        let args = quoting_args(QuotingStyle::ShellEscape);
+        let mut buf = Vec::new();
+        Formatter::new(&args)
+            .write_heading(&mut buf, std::path::Path::new("dir\x1b[1m/sub dir"))
+            .unwrap();
+        assert_eq!(buf, b"'dir'$'\\033''[1m/sub dir':\n");
+    }
+
+    #[test]
+    fn test_extreme_timestamps_do_not_panic() {
+        let now = SystemTime::now();
+        let far = |secs: u64, future: bool| {
+            let d = Duration::from_secs(secs);
+            if future {
+                SystemTime::UNIX_EPOCH.checked_add(d)
+            } else {
+                SystemTime::UNIX_EPOCH.checked_sub(d)
+            }
+        };
+        let styles = [
+            TimeStyle::Locale,
+            TimeStyle::Iso,
+            TimeStyle::LongIso,
+            TimeStyle::FullIso,
+            TimeStyle::Custom("%Y".to_string()),
+        ];
+        for secs in [10_000_000_000_000_u64, u64::MAX / 4, i64::MAX as u64] {
+            for future in [true, false] {
+                let Some(t) = far(secs, future) else { continue };
+                for style in &styles {
+                    // must not panic; an unrepresentable time prints as "?"
+                    let shown = format_time(t, now, style);
+                    assert!(!shown.is_empty());
+                }
+            }
+        }
     }
 }

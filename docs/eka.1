@@ -142,6 +142,27 @@ Follow symbolic links named on the command line.
 Never follow symbolic links. This is the default and overrides \fB\-H\fR and \fB\-L\fR.
 .PP
 A command-line symbolic link to a directory is listed as the directory's contents unless \fB\-d\fR or \fB\-l\fR is given.
+.SS "Quoting"
+.TP
+\fB\-N\fR, \fB\-\-literal\fR
+Print names as they are.
+.TP
+\fB\-b\fR, \fB\-\-escape\fR
+Print C-style backslash escapes for unprintable characters. Spaces and backslashes are escaped too.
+.TP
+\fB\-Q\fR, \fB\-\-quote\-name\fR
+Enclose names in double quotes, with C-style escapes.
+.TP
+\fB\-q\fR, \fB\-\-hide\-control\-chars\fR
+Print \fB?\fR instead of unprintable characters. This is the default for the \fBliteral\fR and \fBshell\fR styles when standard output is a terminal.
+.TP
+\fB\-\-show\-control\-chars\fR
+Print unprintable characters as they are. This is the default when standard output is not a terminal.
+.TP
+\fB\-\-quoting\-style\fR=\fIWORD\fR
+Use quoting style \fIWORD\fR: \fBliteral\fR, \fBshell\fR (quote only when the shell needs it), \fBshell\-always\fR, \fBshell\-escape\fR (like \fBshell\fR, with $'...' escapes for unprintable characters), \fBshell\-escape\-always\fR, \fBc\fR or \fBescape\fR. When several options select a style the order of precedence is \fB\-\-quoting\-style\fR, \fB\-Q\fR, \fB\-b\fR, \fB\-N\fR, then \fBQUOTING_STYLE\fR.
+.PP
+The default style is \fBshell\-escape\fR when standard output is a terminal and \fBliteral\fR otherwise. With the shell styles, names that do not need quotes get a leading space when other names in the listing are quoted, so that names line up. Link targets and the headings printed with \fB\-R\fR or several operands are quoted the same way. Paths in error messages are always quoted.
 .SS "Color"
 .TP
 \fB\-\-color\fR[=\fIWHEN\fR]
@@ -157,6 +178,9 @@ Print the version and exit.
 .TP
 \fBLS_COLORS\fR
 Color specification in the \fBdircolors\fR(1) format. The keys \fBdi ln ex or pi so bd cd fi\fR and \fB*.ext\fR patterns are used on top of the GNU defaults. If it is unset or empty, the built-in scheme is used.
+.TP
+\fBQUOTING_STYLE\fR
+Default for \fB\-\-quoting\-style\fR. Invalid values are ignored.
 .TP
 \fBTIME_STYLE\fR
 Default for \fB\-\-time\-style\fR. Invalid values are ignored.
@@ -227,8 +251,12 @@ List \fIsrc\fR and all its subdirectories.
 .TP
 \fBeka \-\-color=always | less \-R\fR
 Page colored output.
+.SH SECURITY
+File names are arbitrary bytes. Printed raw to a terminal, a name can move the cursor, clear the screen, change the window title or, with a bidirectional override, make one file look like another. On a terminal \fBeka\fR therefore quotes names by default (see \fBQuoting\fR). Unprintable characters are control characters, the bidirectional overrides and isolates, the line and paragraph separators, and bytes that are not valid UTF-8. When standard output is not a terminal names are written as they are, as \fBls\fR(1) does, so use \fB\-b\fR, \fB\-Q\fR or \fB\-q\fR when the output is displayed later.
+.PP
+\fBeka\fR contains no unsafe code. With \fB\-R\fR, a directory that is its own ancestor is reported as "not listing already-listed directory" and skipped.
 .SH NOTES
-Not implemented yet: \fB\-q \-b \-N \-Q\fR and quoting of unusual names, \fB\-\-author\fR, \fB\-\-si\fR. File names are written as they are, without escaping control characters. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
+Not implemented yet: \fB\-\-author\fR, \fB\-\-si\fR, and the \fBlocale\fR and \fBclocale\fR quoting styles. The shell styles always use single quotes. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
 .SH AUTHOR
 Alejandro Lopez Monzon.
 .SH BUGS
