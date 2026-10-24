@@ -54,7 +54,7 @@ pub struct Args {
     #[arg(short = 'd', long = "directory")]
     pub directories: bool,
 
-    /// Do not ignore entries starting with .
+    /// Do not ignore entries whose names start with a dot
     #[arg(short = 'a', long = "all")]
     pub all: bool,
 
@@ -196,7 +196,10 @@ mod tests {
 
     #[test]
     fn test_sort_word_overrides_flags() {
-        assert_eq!(parse(&["-S", "--sort=extension"]).sort_field(), SortField::Extension);
+        assert_eq!(
+            parse(&["-S", "--sort=extension"]).sort_field(),
+            SortField::Extension
+        );
         assert_eq!(parse(&["--sort=none"]).sort_field(), SortField::None);
     }
 
@@ -241,7 +244,13 @@ mod tests {
 
     #[test]
     fn test_gnu_long_options() {
-        let a = parse(&["--all", "--reverse", "--recursive", "--directory", "--inode"]);
+        let a = parse(&[
+            "--all",
+            "--reverse",
+            "--recursive",
+            "--directory",
+            "--inode",
+        ]);
         assert!(a.all && a.reverse && a.recursive && a.directories && a.inode);
     }
 }

@@ -1,125 +1,164 @@
-.TH EKA 1 "Version 0.2.0" "February 2026" "Eka User Manual"
+.TH EKA 1 "October 24, 2026" "eka 0.2.0" "Eka User Manual"
 .SH NAME
-eka \- list directory contents with color coding
+eka \- list directory contents
 .SH SYNOPSIS
 .B eka
-[\fIflags\fR] [\fIdirectory\fR]...
+[\fIOPTION\fR]... [\fIFILE\fR]...
 .SH DESCRIPTION
+\fBeka\fR is a replacement for \fBls\fR(1) written in Rust. It lists information about the \fIFILE\fRs (the current directory by default), sorted by name unless another sort option is given, and colors the output when it is written to a terminal.
 .PP
-\fBEka\fR is a modern replacement for the traditional \fBls\fR command, written in Rust. It displays files and directories with color-coded output for easy identification.
+Non-directory arguments are listed first, then each directory under a \fIpath\fR:
+heading when more than one operand is given or \fB\-R\fR is used. Names are written byte for byte, so names that are not valid UTF-8 are preserved.
 .SH OPTIONS
-.SS "Basic Options"
-.TP
-\fB\-1\fR
-List one file per line.
-.TP
-\fB\-l\fR, \fB\-\-long\fR
-Use a long listing format with columns (permissions, size, date, name).
-.TP
-\fB\-d\fR, \fB\-\-directories\fR
-List directories only, not their contents.
+.SS "Listing"
 .TP
 \fB\-a\fR, \fB\-\-all\fR
-Show hidden files (starting with .).
+Do not ignore entries starting with \fB.\fR, and list the implied \fB.\fR and \fB..\fR.
 .TP
-\fB\-H\fR, \fB\-\-human\-readable\fR
-Display file sizes in human-readable format (KB, MB, GB).
-.SS "Classification Options"
+\fB\-A\fR, \fB\-\-almost\-all\fR
+Do not ignore entries starting with \fB.\fR, but do not list \fB.\fR and \fB..\fR.
 .TP
-\fB\-F\fR, \fB\-\-classify\fR
-Append file type indicators (* / = > @ |) to file names.
-.TP
-\fB\-i\fR, \fB\-\-inode\fR
-Print the inode number of each file.
-.SS "Sorting Options"
-.TP
-\fB\-S\fR
-Sort by file size, largest files first.
-.TP
-\fB\-t\fR
-Sort by modification time, newest first.
-.TP
-\fB\-u\fR
-Sort by access time, newest first.
-.TP
-\fB\-r\fR, \fB\-\-reverse\fR
-Reverse the sort order.
-.TP
-\fB\-\-sort=\fR\fIWORD\fR
-Sort by WORD instead of name: none, name, size, time, access, change, extension.
-.SS "Recursive Options"
+\fB\-d\fR, \fB\-\-directory\fR
+List directories themselves, not their contents.
 .TP
 \fB\-R\fR, \fB\-\-recursive\fR
-List subdirectories recursively.
-.SH OUTPUT FORMAT
-.SS "Short Format (default)"
-Displays file names in a vertical list with color coding based on file type.
-.SS "Long Format (\fB\-l\fR)"
-Displays detailed information in columns:
+List subdirectories recursively. Symbolic links to directories are not followed, so link cycles cannot loop.
+.SS "Format"
+.TP
+\fB\-1\fR
+List one entry per line. This is currently the only layout used for the short format.
+.TP
+\fB\-l\fR
+Use a long listing format: mode, link count, owner, group, size, time and name. There is no header row, and each column is as wide as its widest value. A \fBtotal\fR line gives the allocated size in 1024-byte blocks. A symbolic link is shown as \fIname\fR \fB\->\fR \fItarget\fR.
+.TP
+\fB\-h\fR, \fB\-\-human\-readable\fR
+With \fB\-l\fR, print sizes as 1.5K, 234M, 2.0G. Sizes are powers of 1024 and are rounded up.
+.TP
+\fB\-F\fR, \fB\-\-classify\fR
+Append an indicator to entries: \fB/\fR directory, \fB*\fR executable, \fB@\fR symbolic link, \fB|\fR FIFO, \fB=\fR socket. In the long format a symbolic link shows its target instead of an indicator.
+.TP
+\fB\-i\fR, \fB\-\-inode\fR
+Print the index number of each file.
+.SS "Sorting"
+.TP
+\fB\-S\fR
+Sort by file size, largest first.
+.TP
+\fB\-t\fR
+Sort by time, newest first.
+.TP
+\fB\-u\fR
+With \fB\-lt\fR: sort by, and show, access time. With \fB\-l\fR: show access time and sort by name. Otherwise: sort by access time, newest first.
+.TP
+\fB\-c\fR
+With \fB\-lt\fR: sort by, and show, status change time (ctime). With \fB\-l\fR: show ctime and sort by name. Otherwise: sort by ctime, newest first.
+.TP
+\fB\-r\fR, \fB\-\-reverse\fR
+Reverse the order while sorting, including ties.
+.TP
+\fB\-\-sort\fR=\fIWORD\fR
+Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBextension\fR. This overrides \fB\-S\fR and \fB\-t\fR.
 .PP
-\fIPermissions  Links  User  Group  Size  Date  Name\fR
-.SH COLOR CODES
+Names are compared bytewise, as with \fBLC_ALL=C ls\fR. Ties in size and time are broken by name. Directories are not grouped first.
+.SS "Symbolic links"
+.TP
+\fB\-L\fR, \fB\-\-dereference\fR
+For a symbolic link, show information for the file it references. A broken link is still shown as a link.
+.TP
+\fB\-H\fR, \fB\-\-dereference\-command\-line\fR
+Follow symbolic links named on the command line.
+.TP
+\fB\-P\fR
+Never follow symbolic links. This is the default and overrides \fB\-H\fR and \fB\-L\fR.
 .PP
-Eka uses ANSI color codes to distinguish file types:
+A command-line symbolic link to a directory is listed as the directory's contents unless \fB\-d\fR or \fB\-l\fR is given.
+.SS "Color"
+.TP
+\fB\-\-color\fR[=\fIWHEN\fR]
+Colorize names. \fIWHEN\fR is \fBalways\fR, \fBauto\fR or \fBnever\fR. Plain \fB\-\-color\fR means \fBalways\fR. The default is \fBauto\fR: color only when standard output is a terminal.
+.SS "Miscellaneous"
+.TP
+\fB\-\-help\fR
+Print a help message and exit.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print the version and exit.
+.SH ENVIRONMENT
+.TP
+\fBLS_COLORS\fR
+Color specification in the \fBdircolors\fR(1) format. The keys \fBdi ln ex or pi so bd cd fi\fR and \fB*.ext\fR patterns are used on top of the GNU defaults. If it is unset or empty, the built-in scheme is used.
+.TP
+\fBNO_COLOR\fR
+When set and not empty, disables color for \fB\-\-color=auto\fR. \fB\-\-color=always\fR ignores it.
+.TP
+\fBTERM\fR
+The value \fBdumb\fR disables color for \fB\-\-color=auto\fR.
+.SH COLORS
+Without \fBLS_COLORS\fR, names are colored by type:
 .TP
 \fBCyan\fR
-Directories
+Directories.
 .TP
-\fBBright Green\fR
-Executable files
+\fBGreen\fR
+Executable files.
 .TP
 \fBYellow\fR
-Symbolic links
+Symbolic links and FIFOs.
+.TP
+\fBBold red\fR
+Broken symbolic links.
 .TP
 \fBMagenta\fR
-Image files
+Sockets and images.
+.TP
+\fBBold yellow\fR
+Block and character devices.
 .TP
 \fBRed\fR
-Video files
+Videos.
 .TP
 \fBOrange\fR
-Audio files
+Audio files.
 .TP
-\fBPurple\fR
-Compressed files
+\fBBlue\fR
+Archives.
+.SH EXIT STATUS
 .TP
-\fBWhite\fR
-Regular files
+\fB0\fR
+Success.
 .TP
-\fBDark Gray\fR
-Hidden files
+\fB1\fR
+Minor problem, such as an entry inside a listed directory that cannot be read.
+.TP
+\fB2\fR
+Serious problem, such as a command-line argument that cannot be accessed.
 .SH EXAMPLES
 .TP
-List current directory:
-\fBeka\fR
+\fBeka \-l\fR
+Long listing of the current directory.
 .TP
-List with long format:
-\fBeka -l\fR
+\fBeka \-lah\fR
+Long listing including hidden files, with human-readable sizes.
 .TP
-List including hidden files:
-\fBeka -a\fR
+\fBeka \-lSr\fR
+Long listing, smallest files first.
 .TP
-Long format with human-readable sizes:
-\fBeka -lh\fR
+\fBeka \-lt\fR
+Long listing, newest first.
 .TP
-Sort by size (largest first):
-\fBeka -lS\fR
+\fBeka \-R src\fR
+List \fIsrc\fR and all its subdirectories.
 .TP
-Sort by modification time:
-\fBeka -lt\fR
-.TP
-List directories recursively:
-\fBeka -R\fR
-.TP
-Classify files with indicators:
-\fBeka -F\fR
+\fBeka \-\-color=always | less \-R\fR
+Page colored output.
+.SH NOTES
+Owner and group are currently printed as numeric IDs. The multi-column layout and the options \fB\-n \-g \-o \-s \-p \-q \-b \-N \-Q \-m \-x \-C \-v \-X \-U \-I\fR, \fB\-\-hide\fR, \fB\-\-time\fR, \fB\-\-time\-style\fR, \fB\-\-full\-time\fR, \fB\-\-group\-directories\-first\fR and \fB\-\-block\-size\fR are not implemented yet. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
 .SH AUTHOR
-Written by the Eka contributors.
+Alejandro Lopez Monzon.
 .SH BUGS
-Report bugs at: https://github.com/yourusername/eka/issues
+Report bugs at https://github.com/alexlm78/eka/issues
 .SH COPYRIGHT
-MIT License
+MIT License.
 .SH "SEE ALSO"
 .BR ls (1),
-.BR dir (1),
-.BR vdir (1)
+.BR dircolors (1)

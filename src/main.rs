@@ -39,17 +39,23 @@ fn main() {
     process::exit(code);
 }
 
-fn print_entries(out: &mut impl Write, entries: &[FileEntry], args: &Args) -> io::Result<()> {
+fn print_entries(
+    out: &mut impl Write,
+    fmt: &Formatter,
+    entries: &[FileEntry],
+    args: &Args,
+) -> io::Result<()> {
     if args.long {
-        Formatter::format_long(out, entries, args)
+        fmt.format_long(out, entries)
     } else {
-        Formatter::format_short(out, entries, args)
+        fmt.format_short(out, entries)
     }
 }
 
 /// Lists every command-line path. Returns the process exit status.
 fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
     let mut status = 0;
+    let fmt = Formatter::new(args);
     let mut files: Vec<FileEntry> = Vec::new();
     let mut dirs: Vec<&str> = Vec::new();
 
@@ -57,13 +63,22 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
     // as themselves, first; directories are expanded afterwards.
     for path in &args.paths {
         let p = Path::new(path);
-        // Follow a command-line symlink to a directory unless -d or -l asks for the link itself
-        let follows = !args.directories && !args.long;
-        let meta = if follows { fs::metadata(p) } else { fs::symlink_metadata(p) };
+        // A command-line symlink to a directory is followed unless -d or -l asks
+        // for the link itself; -H and -L always follow
+        let follows = args.dereference_cmdline() || (!args.directories && !args.long);
+        let meta = if follows {
+            fs::metadata(p)
+        } else {
+            fs::symlink_metadata(p)
+        };
         let meta = meta.or_else(|_| fs::symlink_metadata(p));
         match meta {
             Ok(m) if m.is_dir() && !args.directories => dirs.push(path),
-            Ok(_) => match FileEntry::with_name(p.to_path_buf(), p.as_os_str().to_owned()) {
+            Ok(_) => match FileEntry::with_name(
+                p.to_path_buf(),
+                p.as_os_str().to_owned(),
+                args.dereference_cmdline(),
+            ) {
                 Ok(e) => files.push(e),
                 Err(e) => {
                     eprintln!("eka: cannot access '{}': {}", path, io_message(&e));
@@ -82,7 +97,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
 
     if !files.is_empty() {
         directory::sort_entries(&mut files, args);
-        print_entries(out, &files, args)?;
+        print_entries(out, &fmt, &files, args)?;
         first = false;
     }
 
@@ -92,7 +107,10 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
             read_directory_recursive(Path::new(path), args, &mut had_error)
         } else {
             read_directory(Path::new(path), args, &mut had_error).map(|entries| {
-                vec![directory::DirectoryEntry { path: path.to_string(), entries }]
+                vec![directory::DirectoryEntry {
+                    path: path.to_string(),
+                    entries,
+                }]
             })
         };
         match listing {
@@ -106,9 +124,9 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
                         writeln!(out, "{}:", d.path)?;
                     }
                     if args.long {
-                        writeln!(out, "total {}", d.entries.len())?;
+                        fmt.write_total(out, &d.entries)?;
                     }
-                    print_entries(out, &d.entries, args)?;
+                    print_entries(out, &fmt, &d.entries, args)?;
                 }
             }
             Err(e) => {

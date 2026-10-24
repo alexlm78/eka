@@ -3,6 +3,7 @@ use crate::types::FileEntry;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 /// Recursive directory entry with path information
@@ -23,15 +24,24 @@ pub fn io_message(e: &io::Error) -> String {
 
 /// Reads a directory and returns filtered, sorted entries.
 /// Per-entry failures are reported on stderr and set `had_error`.
-pub fn read_directory(path: &Path, args: &Args, had_error: &mut bool) -> io::Result<Vec<FileEntry>> {
+pub fn read_directory(
+    path: &Path,
+    args: &Args,
+    had_error: &mut bool,
+) -> io::Result<Vec<FileEntry>> {
     let mut file_entries: Vec<FileEntry> = Vec::new();
 
     if args.all {
         for dot in [".", ".."] {
-            match FileEntry::with_name(path.join(dot), OsString::from(dot)) {
+            match FileEntry::with_name(path.join(dot), OsString::from(dot), false) {
                 Ok(e) => file_entries.push(e),
                 Err(e) => {
-                    eprintln!("eka: cannot access '{}/{}': {}", path.display(), dot, io_message(&e));
+                    eprintln!(
+                        "eka: cannot access '{}/{}': {}",
+                        path.display(),
+                        dot,
+                        io_message(&e)
+                    );
                     *had_error = true;
                 }
             }
@@ -47,11 +57,15 @@ pub fn read_directory(path: &Path, args: &Args, had_error: &mut bool) -> io::Res
                 continue;
             }
         };
-        match FileEntry::with_name(entry.path(), entry.file_name()) {
-            Ok(fe) if args.all || !fe.is_hidden => file_entries.push(fe),
+        match FileEntry::with_name(entry.path(), entry.file_name(), args.dereference()) {
+            Ok(fe) if args.show_hidden() || !fe.is_hidden => file_entries.push(fe),
             Ok(_) => {}
             Err(e) => {
-                eprintln!("eka: cannot access '{}': {}", entry.path().display(), io_message(&e));
+                eprintln!(
+                    "eka: cannot access '{}': {}",
+                    entry.path().display(),
+                    io_message(&e)
+                );
                 *had_error = true;
             }
         }
@@ -83,7 +97,11 @@ pub fn read_directory_recursive(
         match read_directory_recursive(&sub, args, had_error) {
             Ok(v) => result.extend(v),
             Err(e) => {
-                eprintln!("eka: cannot open directory '{}': {}", sub.display(), io_message(&e));
+                eprintln!(
+                    "eka: cannot open directory '{}': {}",
+                    sub.display(),
+                    io_message(&e)
+                );
                 *had_error = true;
             }
         }
@@ -91,77 +109,52 @@ pub fn read_directory_recursive(
     Ok(result)
 }
 
-/// Sorts entries based on CLI arguments
+/// Sorts entries per the CLI options. Names compare bytewise (C locale);
+/// size and time ties fall back to name, and -r reverses the whole order.
 pub fn sort_entries(entries: &mut [FileEntry], args: &Args) {
-    let sort_field = args.get_sort_field();
-    let reverse = args.reverse;
-    
-    entries.sort_by(|a, b| {
-        // First compare by type (directories first), but only for name sorting
-        if sort_field == SortField::Name {
-            let a_is_dir = a.file_type.is_dir();
-            let b_is_dir = b.file_type.is_dir();
-            
-            if a_is_dir != b_is_dir {
-                let cmp = b_is_dir.cmp(&a_is_dir);
-                return if reverse { cmp.reverse() } else { cmp };
-            }
-        }
+    let field = args.sort_field();
+    let time = args.time_field();
 
-        // Sort by the selected field
-        let cmp = match sort_field {
-            SortField::Name => {
-                a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase())
+    if field != SortField::None {
+        entries.sort_by(|a, b| {
+            let by_name = || a.name.as_bytes().cmp(b.name.as_bytes());
+            match field {
+                SortField::Name | SortField::None => by_name(),
+                SortField::Size => b.size.cmp(&a.size).then_with(by_name),
+                SortField::Time => b.time(time).cmp(&a.time(time)).then_with(by_name),
+                SortField::Extension => extension(a).cmp(extension(b)).then_with(by_name),
             }
-            SortField::Size => {
-                // Larger files first (descending)
-                b.size.cmp(&a.size)
-            }
-            SortField::Time | SortField::Access | SortField::Change => {
-                // Newer first (descending)
-                b.get_sort_time(sort_field).cmp(&a.get_sort_time(sort_field))
-            }
-            SortField::Extension => {
-                // Get extensions
-                let ext_a = Path::new(&a.name)
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_lowercase())
-                    .unwrap_or_default();
-                let ext_b = Path::new(&b.name)
-                    .extension()
-                    .map(|e| e.to_string_lossy().to_lowercase())
-                    .unwrap_or_default();
-                ext_a.cmp(&ext_b)
-            }
-        };
+        });
+    }
+    if args.reverse {
+        entries.reverse();
+    }
+}
 
-        if reverse {
-            cmp.reverse()
-        } else {
-            cmp
-        }
-    });
+/// Bytes after the last dot of the name (empty when there is none)
+fn extension(e: &FileEntry) -> &[u8] {
+    Path::new(&e.name)
+        .extension()
+        .map_or(&[][..], |x| x.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::FileType;
-    use std::path::PathBuf;
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
-    fn create_test_entry(name: &str, file_type: FileType, size: u64) -> FileEntry {
+    fn entry(name: &str, size: u64) -> FileEntry {
         FileEntry {
             name: name.into(),
             path: PathBuf::from(name),
-            file_type,
+            file_type: FileType::Regular,
             size,
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,
             changed: SystemTime::UNIX_EPOCH,
             is_hidden: name.starts_with('.'),
-            is_symlink: false,
             symlink_target: None,
             inode: 0,
             nlink: 1,
@@ -171,66 +164,173 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_sort_by_name() {
-        let mut entries = vec![
-            create_test_entry("zebra", FileType::Regular, 100),
-            create_test_entry("apple", FileType::Regular, 200),
-            create_test_entry("banana", FileType::Regular, 50),
-        ];
-        
-        let args = Args::default();
-        sort_entries(&mut entries, &args);
-        
-        assert_eq!(entries[0].name, "apple");
-        assert_eq!(entries[1].name, "banana");
-        assert_eq!(entries[2].name, "zebra");
+    fn names(entries: &[FileEntry]) -> Vec<String> {
+        entries
+            .iter()
+            .map(|e| e.display_name().into_owned())
+            .collect()
     }
 
     #[test]
-    fn test_sort_by_size() {
-        let mut entries = vec![
-            create_test_entry("small", FileType::Regular, 50),
-            create_test_entry("large", FileType::Regular, 1000),
-            create_test_entry("medium", FileType::Regular, 200),
-        ];
-        
-        let mut args = Args::default();
-        args.sort_size = true;
-        sort_entries(&mut entries, &args);
-        
-        assert_eq!(entries[0].name, "large");
-        assert_eq!(entries[1].name, "medium");
-        assert_eq!(entries[2].name, "small");
+    fn test_sort_by_name_is_bytewise() {
+        let mut v = vec![entry("b", 0), entry("a", 0), entry("B", 0), entry("_x", 0)];
+        sort_entries(&mut v, &Args::default());
+        assert_eq!(names(&v), ["B", "_x", "a", "b"]);
     }
 
     #[test]
-    fn test_sort_reverse() {
-        let mut entries = vec![
-            create_test_entry("zebra", FileType::Regular, 100),
-            create_test_entry("apple", FileType::Regular, 200),
-        ];
-        
-        let mut args = Args::default();
-        args.reverse = true;
-        sort_entries(&mut entries, &args);
-        
-        assert_eq!(entries[0].name, "zebra");
-        assert_eq!(entries[1].name, "apple");
+    fn test_directories_are_not_grouped_first() {
+        let mut d = entry("a_dir", 4096);
+        d.file_type = FileType::Directory;
+        let mut v = vec![entry("b.txt", 1), d];
+        sort_entries(&mut v, &Args::default());
+        assert_eq!(names(&v), ["a_dir", "b.txt"]);
     }
 
     #[test]
-    fn test_directories_first() {
-        let mut entries = vec![
-            create_test_entry("file.txt", FileType::Regular, 100),
-            create_test_entry("mydir", FileType::Directory, 4096),
-            create_test_entry("another.txt", FileType::Regular, 50),
+    fn test_sort_by_size_desc_ties_by_name() {
+        let mut v = vec![entry("z", 10), entry("a", 10), entry("big", 100)];
+        let args = Args {
+            sort_size: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["big", "a", "z"]);
+    }
+
+    #[test]
+    fn test_sort_by_time_newest_first_and_selected_field() {
+        let mut old = entry("old", 0);
+        let mut new = entry("new", 0);
+        old.modified = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+        new.modified = SystemTime::UNIX_EPOCH + Duration::from_secs(20);
+        // access times are the opposite order
+        old.accessed = SystemTime::UNIX_EPOCH + Duration::from_secs(99);
+        new.accessed = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+
+        let mut v = vec![old.clone(), new.clone()];
+        sort_entries(
+            &mut v,
+            &Args {
+                sort_time: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(names(&v), ["new", "old"]);
+
+        let mut v = vec![new, old];
+        sort_entries(
+            &mut v,
+            &Args {
+                sort_time: true,
+                sort_access: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(names(&v), ["old", "new"]);
+    }
+
+    #[test]
+    fn test_sort_by_extension() {
+        let mut v = vec![
+            entry("b.rs", 0),
+            entry("a.txt", 0),
+            entry("c.rs", 0),
+            entry("noext", 0),
         ];
-        
-        let args = Args::default();
-        sort_entries(&mut entries, &args);
-        
-        // Directories should come first
-        assert!(entries[0].file_type == FileType::Directory);
+        let args = Args {
+            sort: Some(SortField::Extension),
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["noext", "b.rs", "c.rs", "a.txt"]);
+    }
+
+    #[test]
+    fn test_reverse_reverses_ties_too() {
+        let mut v = vec![entry("a", 10), entry("b", 10), entry("c", 50)];
+        let args = Args {
+            sort_size: true,
+            reverse: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["b", "a", "c"]);
+    }
+
+    #[test]
+    fn test_sort_none_keeps_order() {
+        let mut v = vec![entry("z", 0), entry("a", 0)];
+        let args = Args {
+            sort: Some(SortField::None),
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["z", "a"]);
+        let args = Args {
+            sort: Some(SortField::None),
+            reverse: true,
+            ..Default::default()
+        };
+        sort_entries(&mut v, &args);
+        assert_eq!(names(&v), ["a", "z"]);
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("eka-dir-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn list(dir: &Path, args: &Args) -> Vec<String> {
+        let mut err = false;
+        names(&read_directory(dir, args, &mut err).unwrap())
+    }
+
+    #[test]
+    fn test_all_vs_almost_all_vs_default() {
+        let d = tmp("hidden");
+        fs::write(d.join(".h"), b"").unwrap();
+        fs::write(d.join("v"), b"").unwrap();
+
+        assert_eq!(list(&d, &Args::default()), ["v"]);
+        assert_eq!(
+            list(
+                &d,
+                &Args {
+                    almost_all: true,
+                    ..Default::default()
+                }
+            ),
+            [".h", "v"]
+        );
+        assert_eq!(
+            list(
+                &d,
+                &Args {
+                    all: true,
+                    ..Default::default()
+                }
+            ),
+            [".", "..", ".h", "v"]
+        );
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn test_recursive_does_not_follow_symlink_cycles() {
+        let d = tmp("cycle");
+        fs::create_dir(d.join("sub")).unwrap();
+        std::os::unix::fs::symlink("..", d.join("sub/up")).unwrap();
+        let mut err = false;
+        let args = Args {
+            recursive: true,
+            ..Default::default()
+        };
+        let dirs = read_directory_recursive(&d, &args, &mut err).unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert!(!err);
+        fs::remove_dir_all(d).unwrap();
     }
 }

@@ -5,7 +5,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::cli::SortField;
+use crate::cli::TimeField;
 
 /// Categorized file types for color coding
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,44 +35,8 @@ impl FileType {
         if ft.is_symlink() {
             return FileType::Symlink;
         }
-<<<<<<< HEAD
-
-        // Check if it's executable
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = metadata.permissions().mode();
-            if mode & 0o111 != 0 {
-                return FileType::Executable;
-            }
-        }
-
-        // On Windows, check for executable extensions
-        #[cfg(windows)]
-        {
-            if let Some(ext) = path.extension() {
-                let ext_str = ext.to_string_lossy().to_lowercase();
-                if matches!(ext_str.as_str(), "exe" | "bat" | "cmd" | "com" | "ps1" | "msi") {
-                    return FileType::Executable;
-                }
-            }
-||||||| parent of f23c46e (fix!: rebuild file model on lstat and align argument handling with ls)
-
-        // Check if it's executable
-        if metadata.permissions().readonly() == false {
-            // Only executable if it has execute permission
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = metadata.permissions().mode();
-                if mode & 0o111 != 0 {
-                    return FileType::Executable;
-                }
-            }
-=======
         if ft.is_fifo() {
             return FileType::Fifo;
->>>>>>> f23c46e (fix!: rebuild file model on lstat and align argument handling with ls)
         }
         if ft.is_socket() {
             return FileType::Socket;
@@ -141,7 +105,6 @@ pub struct FileEntry {
     pub accessed: SystemTime,
     pub changed: SystemTime,
     pub is_hidden: bool,
-    pub is_symlink: bool,
     pub symlink_target: Option<OsString>,
     pub inode: u64,
     pub nlink: u64,
@@ -172,13 +135,21 @@ impl FileEntry {
             Some(n) => n.to_os_string(),
             None => path.clone().into_os_string(),
         };
-        Self::with_name(path, name)
+        Self::with_name(path, name, false)
     }
 
-    /// Creates an entry for `path` shown under `name` (used for "." and "..")
-    pub fn with_name(path: PathBuf, name: OsString) -> std::io::Result<Self> {
-        // lstat: never follow symlinks, so broken links are still listed
-        let metadata = fs::symlink_metadata(&path)?;
+    /// Creates an entry for `path` shown under `name` (used for "." and "..").
+    /// With `deref`, a symlink reports its target's metadata; broken links
+    /// fall back to the link itself.
+    pub fn with_name(path: PathBuf, name: OsString, deref: bool) -> std::io::Result<Self> {
+        // lstat by default, so broken links are still listed
+        let mut metadata = fs::symlink_metadata(&path)?;
+        if deref
+            && metadata.file_type().is_symlink()
+            && let Ok(target_meta) = fs::metadata(&path)
+        {
+            metadata = target_meta;
+        }
         let bytes = name.as_bytes();
         let is_hidden = bytes.first() == Some(&b'.');
 
@@ -201,7 +172,6 @@ impl FileEntry {
             accessed: unix_time(metadata.atime(), metadata.atime_nsec()),
             changed: unix_time(metadata.ctime(), metadata.ctime_nsec()),
             is_hidden,
-            is_symlink,
             symlink_target,
             inode: metadata.ino(),
             nlink: metadata.nlink(),
@@ -212,17 +182,18 @@ impl FileEntry {
         })
     }
 
-    /// Name for display; invalid UTF-8 is replaced (raw bytes handled in output phase)
+    /// Lossy name for tests and messages; output paths write the raw bytes
+    #[cfg(test)]
     pub fn display_name(&self) -> std::borrow::Cow<'_, str> {
         self.name.to_string_lossy()
     }
 
-    /// Gets the time value for sorting based on sort field
-    pub fn get_sort_time(&self, sort_field: SortField) -> SystemTime {
-        match sort_field {
-            SortField::Access => self.accessed,
-            SortField::Change => self.changed,
-            _ => self.modified,
+    /// Timestamp selected by -u/-c (modification time by default)
+    pub fn time(&self, field: TimeField) -> SystemTime {
+        match field {
+            TimeField::Modified => self.modified,
+            TimeField::Accessed => self.accessed,
+            TimeField::Changed => self.changed,
         }
     }
 }
@@ -273,7 +244,7 @@ fn format_permissions(metadata: &fs::Metadata) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::{symlink, PermissionsExt};
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     fn tmp(name: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("eka-test-{}-{}", name, std::process::id()));
@@ -309,7 +280,7 @@ mod tests {
         symlink("missing", d.join("bad")).unwrap();
 
         let ok = FileEntry::from_path(d.join("ok")).unwrap();
-        assert!(ok.is_symlink);
+        assert!(ok.symlink_target.is_some());
         assert_eq!(ok.file_type, FileType::Symlink);
         assert!(ok.permissions.starts_with('l'));
         assert_eq!(ok.symlink_target.as_deref(), Some("real".as_ref()));
@@ -320,14 +291,41 @@ mod tests {
     }
 
     #[test]
+    fn test_deref_reports_target() {
+        let d = tmp("deref");
+        fs::write(d.join("real"), b"hello").unwrap();
+        symlink("real", d.join("ln")).unwrap();
+        symlink("missing", d.join("bad")).unwrap();
+
+        let plain = FileEntry::with_name(d.join("ln"), "ln".into(), false).unwrap();
+        assert!(plain.symlink_target.is_some());
+
+        let deref = FileEntry::with_name(d.join("ln"), "ln".into(), true).unwrap();
+        assert!(deref.symlink_target.is_none());
+        assert_eq!(deref.size, 5);
+        assert!(deref.permissions.starts_with('-'));
+
+        // broken link falls back to the link itself
+        let bad = FileEntry::with_name(d.join("bad"), "bad".into(), true).unwrap();
+        assert_eq!(bad.file_type, FileType::BrokenSymlink);
+        fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
     fn test_special_permission_bits() {
         let d = tmp("perm");
         let f = d.join("f");
         fs::write(&f, b"x").unwrap();
         fs::set_permissions(&f, fs::Permissions::from_mode(0o4755)).unwrap();
-        assert_eq!(FileEntry::from_path(f.clone()).unwrap().permissions, "-rwsr-xr-x");
+        assert_eq!(
+            FileEntry::from_path(f.clone()).unwrap().permissions,
+            "-rwsr-xr-x"
+        );
         fs::set_permissions(&f, fs::Permissions::from_mode(0o1644)).unwrap();
-        assert_eq!(FileEntry::from_path(f.clone()).unwrap().permissions, "-rw-r--r-T");
+        assert_eq!(
+            FileEntry::from_path(f.clone()).unwrap().permissions,
+            "-rw-r--r-T"
+        );
         fs::set_permissions(&f, fs::Permissions::from_mode(0o2751)).unwrap();
         assert_eq!(FileEntry::from_path(f).unwrap().permissions, "-rwxr-s--x");
         fs::remove_dir_all(d).unwrap();
