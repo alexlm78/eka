@@ -2,6 +2,7 @@ mod cli;
 mod colors;
 mod directory;
 mod formatter;
+mod layout;
 mod types;
 
 use clap::Parser;
@@ -45,7 +46,7 @@ fn print_entries(
     entries: &[FileEntry],
     args: &Args,
 ) -> io::Result<()> {
-    if args.long {
+    if args.is_long() {
         fmt.format_long(out, entries)
     } else {
         fmt.format_short(out, entries)
@@ -65,7 +66,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
         let p = Path::new(path);
         // A command-line symlink to a directory is followed unless -d or -l asks
         // for the link itself; -H and -L always follow
-        let follows = args.dereference_cmdline() || (!args.directories && !args.long);
+        let follows = args.dereference_cmdline() || (!args.directories && !args.is_long());
         let meta = if follows {
             fs::metadata(p)
         } else {
@@ -123,7 +124,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
                     if show_names {
                         writeln!(out, "{}:", d.path)?;
                     }
-                    if args.long {
+                    if args.is_long() || args.size {
                         fmt.write_total(out, &d.entries)?;
                     }
                     print_entries(out, &fmt, &d.entries, args)?;

@@ -26,10 +26,34 @@ List subdirectories recursively. Symbolic links to directories are not followed,
 .SS "Format"
 .TP
 \fB\-1\fR
-List one entry per line. This is currently the only layout used for the short format.
+List one entry per line. This is the default when standard output is not a terminal.
+.TP
+\fB\-C\fR
+List entries in columns, sorted down. This is the default on a terminal.
+.TP
+\fB\-x\fR
+List entries in rows instead of columns.
+.TP
+\fB\-m\fR
+Fill the width with a comma separated list of entries.
+.TP
+\fB\-w\fR, \fB\-\-width\fR=\fICOLS\fR
+Assume a screen width of \fICOLS\fR columns; 0 means no limit. The default is $COLUMNS, then the width of the terminal, then 80.
 .TP
 \fB\-l\fR
 Use a long listing format: mode, link count, owner, group, size, time and name. There is no header row, and each column is as wide as its widest value. A \fBtotal\fR line gives the allocated size in 1024-byte blocks. A symbolic link is shown as \fIname\fR \fB\->\fR \fItarget\fR.
+.TP
+\fB\-n\fR, \fB\-\-numeric\-uid\-gid\fR
+Like \fB\-l\fR, but list numeric user and group IDs.
+.TP
+\fB\-g\fR
+Like \fB\-l\fR, but do not list the owner.
+.TP
+\fB\-o\fR
+Like \fB\-l\fR, but do not list the group.
+.TP
+\fB\-G\fR, \fB\-\-no\-group\fR
+With \fB\-l\fR, do not print the group.
 .TP
 \fB\-h\fR, \fB\-\-human\-readable\fR
 With \fB\-l\fR, print sizes as 1.5K, 234M, 2.0G. Sizes are powers of 1024 and are rounded up.
@@ -37,8 +61,20 @@ With \fB\-l\fR, print sizes as 1.5K, 234M, 2.0G. Sizes are powers of 1024 and ar
 \fB\-F\fR, \fB\-\-classify\fR
 Append an indicator to entries: \fB/\fR directory, \fB*\fR executable, \fB@\fR symbolic link, \fB|\fR FIFO, \fB=\fR socket. In the long format a symbolic link shows its target instead of an indicator.
 .TP
+\fB\-p\fR, \fB\-\-indicator\-style\fR=\fBslash\fR
+Append \fB/\fR to directories. \fB\-F\fR takes precedence.
+.TP
 \fB\-i\fR, \fB\-\-inode\fR
 Print the index number of each file.
+.TP
+\fB\-s\fR, \fB\-\-size\fR
+Print the allocated size of each file, in blocks, before the name (before the mode with \fB\-l\fR). A \fBtotal\fR line is printed for each directory.
+.TP
+\fB\-k\fR, \fB\-\-kibibytes\fR
+Use 1024-byte blocks. This is the default.
+.TP
+\fB\-\-block\-size\fR=\fISIZE\fR
+Scale sizes by \fISIZE\fR before printing them: the \fBtotal\fR line, the \fB\-s\fR column and the \fB\-l\fR size column. \fISIZE\fR is an integer with an optional unit: K, M, G, T, P, E (powers of 1024) or KB, MB, GB, TB, PB, EB (powers of 1000). A unit alone means one of it. \fB\-h\fR overrides this option.
 .SS "Sorting"
 .TP
 \fB\-S\fR
@@ -60,6 +96,16 @@ Reverse the order while sorting, including ties.
 Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBextension\fR. This overrides \fB\-S\fR and \fB\-t\fR.
 .PP
 Names are compared bytewise, as with \fBLC_ALL=C ls\fR. Ties in size and time are broken by name. Directories are not grouped first.
+.SS "Time"
+.TP
+\fB\-\-time\fR=\fIWORD\fR
+Select which timestamp is shown with \fB\-l\fR and used for sorting with \fB\-t\fR: \fBatime\fR (\fBaccess\fR, \fBuse\fR), \fBctime\fR (\fBstatus\fR) or \fBmtime\fR (\fBmodification\fR).
+.TP
+\fB\-\-time\-style\fR=\fISTYLE\fR
+Format timestamps in the long listing. \fBfull\-iso\fR is "2026-10-24 09:45:12.123456789 -0600"; \fBlong\-iso\fR is "2026-10-24 09:45"; \fBiso\fR is "10-24 09:45" for recent files and "2026-10-24" otherwise; \fBlocale\fR is the default. \fB+\fR\fIFORMAT\fR uses a \fBstrftime\fR(3) format; if it contains a newline, the part before it is used for recent files and the part after it for older ones.
+.TP
+\fB\-\-full\-time\fR
+Like \fB\-l \-\-time\-style=full\-iso\fR.
 .SS "Symbolic links"
 .TP
 \fB\-L\fR, \fB\-\-dereference\fR
@@ -87,6 +133,12 @@ Print the version and exit.
 .TP
 \fBLS_COLORS\fR
 Color specification in the \fBdircolors\fR(1) format. The keys \fBdi ln ex or pi so bd cd fi\fR and \fB*.ext\fR patterns are used on top of the GNU defaults. If it is unset or empty, the built-in scheme is used.
+.TP
+\fBTIME_STYLE\fR
+Default for \fB\-\-time\-style\fR. Invalid values are ignored.
+.TP
+\fBCOLUMNS\fR
+Line width for the column layouts when \fB\-w\fR is not given.
 .TP
 \fBNO_COLOR\fR
 When set and not empty, disables color for \fB\-\-color=auto\fR. \fB\-\-color=always\fR ignores it.
@@ -152,7 +204,7 @@ List \fIsrc\fR and all its subdirectories.
 \fBeka \-\-color=always | less \-R\fR
 Page colored output.
 .SH NOTES
-Owner and group are currently printed as numeric IDs. The multi-column layout and the options \fB\-n \-g \-o \-s \-p \-q \-b \-N \-Q \-m \-x \-C \-v \-X \-U \-I\fR, \fB\-\-hide\fR, \fB\-\-time\fR, \fB\-\-time\-style\fR, \fB\-\-full\-time\fR, \fB\-\-group\-directories\-first\fR and \fB\-\-block\-size\fR are not implemented yet. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
+Not implemented yet: \fB\-q \-b \-N \-Q\fR and quoting of unusual names, \fB\-v \-X \-U \-I\fR, \fB\-\-hide\fR, \fB\-\-group\-directories\-first\fR, \fB\-\-author\fR, \fB\-\-si\fR. File names are written as they are, without escaping control characters. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
 .SH AUTHOR
 Alejandro Lopez Monzon.
 .SH BUGS
