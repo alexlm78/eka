@@ -65,52 +65,80 @@ impl FromStr for TimeStyle {
     }
 }
 
-/// Parses GNU-style block sizes in bytes.
-pub fn parse_block_size(value: &str) -> Result<u64, String> {
-    let (number, multiplier) = if let Some(number) = value.strip_suffix("KB") {
-        (number, 1_000)
-    } else if let Some(number) = value.strip_suffix("MB") {
-        (number, 1_000_000)
-    } else if let Some(number) = value.strip_suffix("GB") {
-        (number, 1_000_000_000)
-    } else if let Some(number) = value.strip_suffix("TB") {
-        (number, 1_000_000_000_000)
-    } else if let Some(number) = value.strip_suffix("PB") {
-        (number, 1_000_000_000_000_000)
-    } else if let Some(number) = value.strip_suffix("EB") {
-        (number, 1_000_000_000_000_000_000)
-    } else if let Some((index, suffix)) = value.char_indices().last() {
-        let multiplier = match suffix {
-            'K' => 1024,
-            'M' => 1024_u64.pow(2),
-            'G' => 1024_u64.pow(3),
-            'T' => 1024_u64.pow(4),
-            'P' => 1024_u64.pow(5),
-            'E' => 1024_u64.pow(6),
-            _ => {
-                return value
-                    .parse::<u64>()
-                    .ok()
-                    .filter(|n| *n > 0)
-                    .ok_or_else(|| "invalid --block-size argument".to_string());
-            }
-        };
-        (&value[..index], multiplier)
+/// A block size for `--block-size`: how many bytes one unit is, and the
+/// suffix GNU ls prints after sizes (only when the option was a bare unit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockSize {
+    pub bytes: u64,
+    pub suffix: &'static str,
+}
+
+impl BlockSize {
+    /// A plain size without a suffix
+    #[cfg(test)]
+    pub const fn of(bytes: u64) -> Self {
+        Self { bytes, suffix: "" }
+    }
+}
+
+/// (spelling, bytes per unit, suffix printed for a bare unit)
+const UNITS: [(&str, u64, &str); 18] = [
+    ("K", 1 << 10, "K"),
+    ("M", 1 << 20, "M"),
+    ("G", 1 << 30, "G"),
+    ("T", 1 << 40, "T"),
+    ("P", 1 << 50, "P"),
+    ("E", 1 << 60, "E"),
+    ("KiB", 1 << 10, "KiB"),
+    ("MiB", 1 << 20, "MiB"),
+    ("GiB", 1 << 30, "GiB"),
+    ("TiB", 1 << 40, "TiB"),
+    ("PiB", 1 << 50, "PiB"),
+    ("EiB", 1 << 60, "EiB"),
+    ("KB", 1_000, "kB"),
+    ("kB", 1_000, "kB"),
+    ("MB", 1_000_000, "MB"),
+    ("GB", 1_000_000_000, "GB"),
+    ("TB", 1_000_000_000_000, "TB"),
+    ("PB", 1_000_000_000_000_000, "PB"),
+];
+
+/// Parses a GNU block size: an optional positive integer and an optional
+/// unit (`K`, `KiB` and friends are powers of 1024, `KB` and friends powers of
+/// 1000). A unit alone means one of it, and then sizes print with its suffix.
+pub fn parse_block_size(value: &str) -> Result<BlockSize, String> {
+    let invalid = || "invalid --block-size argument".to_string();
+    let split = value
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(value.len());
+    let (digits, unit) = value.split_at(split);
+
+    let (multiplier, suffix) = if unit.is_empty() {
+        (1, "")
+    } else if let Some(&(_, bytes, shown)) = UNITS.iter().find(|(name, _, _)| *name == unit) {
+        // "K" alone prints with a suffix; "2K" or "1K" does not
+        (bytes, if digits.is_empty() { shown } else { "" })
+    } else if unit == "EB" {
+        (
+            1_000_000_000_000_000_000,
+            if digits.is_empty() { "EB" } else { "" },
+        )
     } else {
-        (value, 1)
+        return Err(invalid());
     };
-    // A bare unit such as "K" or "MB" means one of that unit
-    let number = if number.is_empty() && !value.is_empty() {
-        "1"
+
+    let count = if digits.is_empty() {
+        if unit.is_empty() {
+            return Err(invalid());
+        }
+        1
     } else {
-        number
+        digits.parse::<u64>().map_err(|_| invalid())?
     };
-    number
-        .parse::<u64>()
-        .ok()
-        .filter(|n| *n > 0)
-        .and_then(|n| n.checked_mul(multiplier))
-        .ok_or_else(|| "invalid --block-size argument".to_string())
+    match count.checked_mul(multiplier) {
+        Some(bytes) if count > 0 => Ok(BlockSize { bytes, suffix }),
+        _ => Err(invalid()),
+    }
 }
 
 /// When to colorize output (--color)
@@ -181,6 +209,10 @@ pub struct Args {
     #[arg(short = 'G', long = "no-group")]
     pub no_group: bool,
 
+    /// Assume tab stops at each COLS (default 8); 0 pads columns with spaces
+    #[arg(short = 'T', long = "tabsize", value_name = "COLS")]
+    pub tabsize: Option<usize>,
+
     /// Set output width to COLS; 0 means no limit
     #[arg(short = 'w', long = "width", value_name = "COLS")]
     pub width: Option<usize>,
@@ -211,7 +243,7 @@ pub struct Args {
 
     /// Scale displayed sizes by SIZE bytes
     #[arg(long, value_name = "SIZE", value_parser = parse_block_size)]
-    pub block_size: Option<u64>,
+    pub block_size: Option<BlockSize>,
 
     /// Append indicator (one of */=>@|) to entries
     #[arg(short = 'F', long = "classify")]
@@ -439,6 +471,11 @@ impl Args {
         } else {
             self.hide_control_chars || stdout_is_tty
         }
+    }
+
+    /// Tab stop distance for padding columns (-T)
+    pub fn tab_size(&self) -> usize {
+        self.tabsize.unwrap_or(8)
     }
 
     /// True when hidden entries are listed (-a or -A)
@@ -674,26 +711,42 @@ mod tests {
     fn test_new_formatting_options() {
         let a = parse(&["-s", "-k", "--block-size=2M", "-p"]);
         assert!(a.size && a.kibibytes && a.slash_indicator());
-        assert_eq!(a.block_size, Some(2 * 1024 * 1024));
+        assert_eq!(a.block_size, Some(BlockSize::of(2 * 1024 * 1024)));
         assert!(parse(&["-F", "-p"]).classify);
         assert!(parse(&["--indicator-style=slash"]).slash_indicator());
     }
 
     #[test]
     fn test_block_size_parser() {
-        assert_eq!(parse_block_size("1").unwrap(), 1);
-        assert_eq!(parse_block_size("2K").unwrap(), 2048);
-        assert_eq!(parse_block_size("3M").unwrap(), 3 * 1024 * 1024);
-        assert_eq!(parse_block_size("4KB").unwrap(), 4000);
-        assert_eq!(parse_block_size("5GB").unwrap(), 5_000_000_000);
-        // a bare unit means one of it
-        assert_eq!(parse_block_size("K").unwrap(), 1024);
-        assert_eq!(parse_block_size("M").unwrap(), 1024 * 1024);
-        assert_eq!(parse_block_size("KB").unwrap(), 1000);
+        let bytes = |s: &str| parse_block_size(s).unwrap().bytes;
+        let suffix = |s: &str| parse_block_size(s).unwrap().suffix;
+        assert_eq!(bytes("1"), 1);
+        assert_eq!(bytes("2K"), 2048);
+        assert_eq!(bytes("3M"), 3 * 1024 * 1024);
+        assert_eq!(bytes("4KB"), 4000);
+        assert_eq!(bytes("5GB"), 5_000_000_000);
+        assert_eq!(bytes("2KiB"), 2048);
+        assert_eq!(bytes("1kB"), 1000);
+        assert_eq!(bytes("1EB"), 1_000_000_000_000_000_000);
+        // a bare unit means one of it, and sizes print with its suffix
+        assert_eq!((bytes("K"), suffix("K")), (1024, "K"));
+        assert_eq!((bytes("M"), suffix("M")), (1 << 20, "M"));
+        assert_eq!((bytes("KB"), suffix("KB")), (1000, "kB"));
+        assert_eq!((bytes("kB"), suffix("kB")), (1000, "kB"));
+        assert_eq!((bytes("MB"), suffix("MB")), (1_000_000, "MB"));
+        assert_eq!((bytes("KiB"), suffix("KiB")), (1024, "KiB"));
+        // a number in front means no suffix, even for 1K
+        for plain in ["1", "1K", "2K", "1M", "1024", "100", "1KB"] {
+            assert_eq!(suffix(plain), "", "{plain}");
+        }
         assert!(parse_block_size("").is_err());
         assert!(parse_block_size("0").is_err());
         assert!(parse_block_size("0K").is_err());
         assert!(parse_block_size("12Q").is_err());
+        assert!(parse_block_size("K2").is_err());
+        assert!(parse_block_size("-1").is_err());
+        assert!(parse_block_size("99999999999999999999").is_err());
+        assert!(parse_block_size("20E").is_err()); // overflows u64
         assert!(Args::try_parse_from(["eka", "--block-size=wat"]).is_err());
     }
 

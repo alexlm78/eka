@@ -216,7 +216,7 @@ pub fn sort_entries(entries: &mut [FileEntry], args: &Args) {
         entries.reverse();
     }
     if args.group_directories_first {
-        entries.sort_by_key(|entry| !entry.file_type.is_dir());
+        entries.sort_by_key(|entry| !(entry.file_type.is_dir() || entry.links_to_dir));
     }
 }
 
@@ -299,6 +299,7 @@ mod tests {
             uid: 0,
             gid: 0,
             blocks: 0,
+            links_to_dir: false,
         }
     }
 

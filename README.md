@@ -60,6 +60,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-C` | List entries in columns, sorted down (default on a terminal) |
 | `-x` | List entries in rows instead of columns |
 | `-m` | Comma separated list, wrapped to the width |
+| `-T`, `--tabsize=COLS` | Pad columns with tabs at every `COLS` (default 8); `0` pads with spaces only. No tabs are used with `-w 0` |
 | `-w`, `--width=COLS` | Set the output width; `0` means no limit. Default: `$COLUMNS`, then the terminal, then 80 |
 | `-l` | Long listing format |
 | `-n`, `--numeric-uid-gid` | Like `-l`, with numeric user and group IDs |
@@ -74,7 +75,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-i`, `--inode` | Print the inode number of each entry |
 | `-s`, `--size` | Print the allocated size of each entry in blocks (1 KiB by default); also prints `total` |
 | `-k`, `--kibibytes` | Use 1024-byte blocks (the default) |
-| `--block-size=SIZE` | Scale sizes by `SIZE`: `K M G T P E` are powers of 1024, `KB MB GB ...` powers of 1000; a bare unit means one of it. `-h` overrides it |
+| `--block-size=SIZE` | Scale sizes by `SIZE`: `K M G T P E` and `KiB MiB ...` are powers of 1024, `KB MB GB ...` powers of 1000. A bare unit (`K`) means one of it and sizes then print with its suffix (`16K`); with a number in front (`1K`, `2K`, `1024`) they do not. `-h` overrides it |
 | `-p`, `--indicator-style=slash` | Append `/` to directories; `-F` takes precedence |
 | `-R`, `--recursive` | List subdirectories recursively (symlinked directories are not followed) |
 | `-S` | Sort by size, largest first |
@@ -86,7 +87,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-U` | Do not sort; list in directory order |
 | `-r`, `--reverse` | Reverse the sort order |
 | `--sort=WORD` | `name` (default), `none`, `size`, `time`, `version`, `extension` |
-| `--group-directories-first` | List directories before other entries, whatever the sort or `-r` |
+| `--group-directories-first` | List directories (and symlinks to directories) before other entries, whatever the sort or `-r` |
 | `-I`, `--ignore=PATTERN` | Do not list entries matching the shell `PATTERN`; repeatable, applies even with `-a` |
 | `--hide=PATTERN` | Like `-I`, but `-a` and `-A` override it |
 | `-B`, `--ignore-backups` | Do not list entries ending with `~` |
@@ -94,7 +95,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-H`, `--dereference-command-line` | Follow symlinks named on the command line |
 | `-P` | Never follow symlinks (default); overrides `-H` and `-L` |
 | `--time=WORD` | Show and sort by `atime` (`access`, `use`), `ctime` (`status`) or `mtime` (`modification`) |
-| `--time-style=STYLE` | `full-iso`, `long-iso`, `iso`, `locale` or `+FORMAT` (a `strftime` format; a newline splits the recent and old formats). `$TIME_STYLE` is the default |
+| `--time-style=STYLE` | `full-iso`, `long-iso`, `iso`, `locale` or `+FORMAT` (a `strftime` format; if it contains a newline, the part before it is used for older files and the part after it for recent ones). `$TIME_STYLE` is the default |
 | `--full-time` | Like `-l --time-style=full-iso` |
 | `-N`, `--literal` | Print names as they are |
 | `-b`, `--escape` | Print C-style backslash escapes for unusual characters |
@@ -124,6 +125,7 @@ File names are arbitrary bytes, and a name such as `evil\x1b[2J` or `report\u202
 
 - **On a terminal** the default quoting style is `shell-escape`: a name that the shell would need quoted is wrapped in single quotes, and unprintable characters appear as `$'\033'`-style escapes, so every name can be copied back into a shell. Unquoted names get one leading space when others are quoted, so the names line up.
 - **When output is not a terminal** (a pipe or a file) names are written as they are, because the output is data for another program. Use `-b`, `-Q`, `-q` or `--quoting-style` to escape them anyway, or set `QUOTING_STYLE` in the environment.
+- A newline in a name is always shown as `?` when names are printed as they are (`-N`, `literal`, `shell`), so one entry cannot span two lines.
 - **Unprintable** means control characters (C0, DEL, C1), the bidirectional overrides and isolates (U+202A-202E, U+2066-2069, U+200E, U+200F, U+061C), the line and paragraph separators, and bytes that are not valid UTF-8.
 - Link targets and the `path:` headings of `-R` and multi-path listings are quoted the same way.
 - **Error messages** always quote the paths they mention, even when standard error is not a terminal.
@@ -154,8 +156,9 @@ If `LS_COLORS` is set, Eka uses it (keys `di ln ex or pi so bd cd fi` and `*.ext
 ## Known differences from GNU `ls`
 
 - Not implemented yet: `--author`, `--si`, `-D`, `-Z`.
-- Shell quoting always uses single quotes (`'it'\\''s'`), where GNU may use double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.
-- `-C` pads with spaces; GNU may use tabs.
+- Shell quoting always uses single quotes (`'it'\\''s'`), where GNU uses double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.
+- With `--quoting-style=shell`, a name whose only special character is a control character is quoted by eka and left bare by GNU.
+- Bidirectional overrides (such as U+202E) are always treated as unprintable. GNU decides by locale, and in a UTF-8 locale it prints them as they are.
 - Column widths count code points, so wide (CJK) characters are not measured correctly.
 - `total` counts 1 KiB blocks, as GNU does; the BSD/macOS `ls` counts 512-byte blocks.
 - Extended attribute and ACL markers (`@`, `+`) are not printed.
@@ -186,13 +189,23 @@ eka/
 
 ## Development
 
+The test suite has three layers: unit tests next to the code, end-to-end tests of the binary with hand-written expected output (`tests/behavior.rs`), and comparisons with the system `ls` (`tests/compat_ls.rs`).
+
 ```bash
 cargo build
 cargo test
 cargo clippy --all-targets
 ```
 
-Requires Rust 1.88 or later (edition 2024, let-chains) on macOS or Linux.
+The comparison tests run against `/bin/ls`. The BSD `ls` of macOS lacks many GNU options, so those comparisons run only when the reference is GNU coreutils. Point `EKA_TEST_LS` at another `ls` to check against it, for example GNU `ls` installed by Homebrew:
+
+```bash
+EKA_TEST_LS=/opt/homebrew/bin/gls cargo test --test compat_ls
+```
+
+CI runs the suite on Linux (GNU `ls`) and macOS, plus a dependency audit and a minimum-Rust-version build.
+
+Requires Rust 1.88 or later (edition 2024 with let-chains) on macOS or Linux. The minimum is checked in CI (`rust-version` in `Cargo.toml`).
 
 ## License
 

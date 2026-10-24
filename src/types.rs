@@ -116,6 +116,9 @@ pub struct FileEntry {
     /// Allocated size in 512-byte blocks
     #[allow(dead_code)]
     pub blocks: u64,
+    /// A symlink whose target is a directory (grouped with directories by
+    /// --group-directories-first, as GNU ls does)
+    pub links_to_dir: bool,
 }
 
 fn unix_time(secs: i64, nsecs: i64) -> SystemTime {
@@ -160,10 +163,12 @@ impl FileEntry {
         let is_symlink = metadata.file_type().is_symlink();
         let mut file_type = FileType::classify(bytes, &metadata);
         let mut symlink_target = None;
+        let mut links_to_dir = false;
         if is_symlink {
             symlink_target = fs::read_link(&path).ok().map(|p| p.into_os_string());
-            if fs::metadata(&path).is_err() {
-                file_type = FileType::BrokenSymlink;
+            match fs::metadata(&path) {
+                Err(_) => file_type = FileType::BrokenSymlink,
+                Ok(target) => links_to_dir = target.is_dir(),
             }
         }
 
@@ -182,6 +187,7 @@ impl FileEntry {
             uid: metadata.uid(),
             gid: metadata.gid(),
             blocks: metadata.blocks(),
+            links_to_dir,
             path,
         })
     }

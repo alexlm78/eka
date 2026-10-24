@@ -1,0 +1,427 @@
+//! Compares eka with the system `ls` on the same fixture trees.
+//!
+//! The reference is `/bin/ls`, or `$EKA_TEST_LS` (for example a GNU `gls` on
+//! macOS). The BSD and GNU programs differ in places, so the flags that only
+//! GNU has are checked only when the reference is GNU, and the long format is
+//! compared exactly with GNU and after normalizing whitespace and the BSD
+//! extras (`@`/`+` after the mode, 512-byte `total`) with BSD.
+
+mod common;
+
+use common::*;
+
+/// Runs both programs on every argument list and reports every difference
+fn assert_same(f: &Fixture, cases: &[&[&str]]) {
+    let mut diffs = Vec::new();
+    for args in cases {
+        let (mine, theirs) = (eka(f, args), sys_ls(f, args));
+        if mine.stdout != theirs.stdout {
+            diffs.push(format!(
+                "{args:?}\n  eka: {:?}\n  ls:  {:?}",
+                text(&mine.stdout),
+                text(&theirs.stdout)
+            ));
+        }
+        if mine.status.success() != theirs.status.success() {
+            diffs.push(format!(
+                "{args:?}: exit eka {:?} vs ls {:?}",
+                mine.status.code(),
+                theirs.status.code()
+            ));
+        }
+    }
+    assert!(
+        diffs.is_empty(),
+        "differences from {}:\n{}",
+        ls_path(),
+        diffs.join("\n")
+    );
+}
+
+macro_rules! need_ls {
+    () => {
+        if !has_system_ls() {
+            eprintln!("skipping: {} not found", ls_path());
+            return;
+        }
+    };
+}
+
+macro_rules! need_gnu {
+    () => {
+        need_ls!();
+        if !system_ls_is_gnu() {
+            eprintln!("skipping: {} is not GNU ls", ls_path());
+            return;
+        }
+    };
+}
+
+#[test]
+fn short_formats_match() {
+    need_ls!();
+    assert_same(
+        &standard_tree(),
+        &[
+            &["-1"],
+            &["-1a"],
+            &["-1A"],
+            &["-1F"],
+            &["-1p"],
+            &["-1r"],
+            &["-1aF"],
+            &["-1Ar"],
+            &["-1i"],
+            &["-1d"],
+            &["-1d", "sub", "link-dir", "a.txt"],
+            &["-1", "a.txt"],
+            &["-1", "sub"],
+            &["-1", "empty-dir"],
+            &["-1", "link-dir"],
+            &["-1d", "link-dir"],
+            &["-1", "sub", "a.txt"],
+            &["-1", "a.txt", "sub", "empty-dir"],
+        ],
+    );
+}
+
+#[test]
+fn recursive_listings_match() {
+    need_ls!();
+    let f = standard_tree();
+    // several operands: both print every heading
+    assert_same(
+        &f,
+        &[&["-1R", "sub", "empty-dir"], &["-1Rp", "sub", "empty-dir"]],
+    );
+    let single: &[&[&str]] = &[&["-1R"], &["-1AR"], &["-1R", "sub"], &["-1Rp"]];
+    if system_ls_is_gnu() {
+        assert_same(&f, single);
+        return;
+    }
+    // BSD ls leaves out the heading of a lone operand; the rest is the same
+    for args in single {
+        let mine = text(&eka(&f, args).stdout);
+        let body = mine.split_once('\n').map_or("", |(_, rest)| rest);
+        assert!(
+            mine.lines().next().is_some_and(|l| l.ends_with(':')),
+            "{args:?}"
+        );
+        assert_eq!(body, text(&sys_ls(&f, args).stdout), "{args:?}");
+    }
+}
+
+#[test]
+fn sort_orders_match() {
+    need_ls!();
+    assert_same(
+        &flat_tree(),
+        &[
+            &["-1S"],
+            &["-1Sr"],
+            &["-1t"],
+            &["-1tr"],
+            &["-1ut"],
+            &["-1r"],
+        ],
+    );
+}
+
+#[test]
+fn missing_operands_fail_like_ls() {
+    need_ls!();
+    let f = standard_tree();
+    for args in [&["nope"][..], &["-1", "nope", "a.txt"], &["-l", "nope"]] {
+        let (mine, theirs) = (eka(&f, args), sys_ls(&f, args));
+        assert!(
+            !mine.status.success() && !theirs.status.success(),
+            "{args:?}"
+        );
+        // what can be listed still is
+        assert_eq!(mine.stdout, theirs.stdout, "{args:?}");
+        assert!(
+            !mine.stderr.is_empty() && !theirs.stderr.is_empty(),
+            "{args:?}"
+        );
+    }
+}
+
+/// Mode without the BSD `@`/`+`/`.` suffix, then the remaining fields with
+/// their padding collapsed. `total` lines are dropped (512 vs 1024 bytes).
+fn normalize(out: &str, inode: bool) -> Vec<String> {
+    out.lines()
+        .filter(|l| !l.starts_with("total "))
+        .map(|line| {
+            let mut fields = line.split_whitespace();
+            let first = if inode {
+                fields.next().unwrap_or("").to_owned()
+            } else {
+                String::new()
+            };
+            let mode = fields
+                .next()
+                .unwrap_or("")
+                .trim_end_matches(['@', '+', '.']);
+            let rest: Vec<&str> = fields.collect();
+            format!("{first} {mode} {}", rest.join(" "))
+        })
+        .collect()
+}
+
+fn assert_long_same(f: &Fixture, cases: &[&[&str]]) {
+    let gnu = system_ls_is_gnu();
+    let mut diffs = Vec::new();
+    for args in cases {
+        let (mine, theirs) = (eka(f, args), sys_ls(f, args));
+        let inode = args
+            .iter()
+            .any(|a| a.starts_with('-') && !a.starts_with("--") && a.contains('i'));
+        let same = if gnu {
+            mine.stdout == theirs.stdout
+        } else {
+            normalize(&text(&mine.stdout), inode) == normalize(&text(&theirs.stdout), inode)
+        };
+        if !same {
+            diffs.push(format!(
+                "{args:?}\n  eka:\n{}\n  ls:\n{}",
+                text(&mine.stdout),
+                text(&theirs.stdout)
+            ));
+        }
+    }
+    assert!(
+        diffs.is_empty(),
+        "differences from {}:\n{}",
+        ls_path(),
+        diffs.join("\n")
+    );
+}
+
+#[test]
+fn long_format_matches() {
+    need_ls!();
+    // Operands avoid symlinks, whose mtime is "now" and could differ by a minute
+    let operands = [
+        "a.txt",
+        "a1",
+        "a10",
+        "a2",
+        "backup~",
+        "big.bin",
+        "c.rs",
+        "with space",
+        "empty-dir",
+        "sub",
+    ];
+    let with = |flags: &'static str| -> Vec<&'static str> {
+        let mut v = vec![flags];
+        v.extend(operands);
+        v
+    };
+    let (l, ln, li, lr, lt) = (
+        with("-l"),
+        with("-ln"),
+        with("-li"),
+        with("-lr"),
+        with("-lS"),
+    );
+    assert_long_same(
+        &standard_tree(),
+        &[
+            &l,
+            &ln,
+            &li,
+            &lr,
+            &lt,
+            &["-ld", "sub", "empty-dir"],
+            &["-l", "sub"],
+        ],
+    );
+    assert_long_same(
+        &flat_tree(),
+        &[
+            &["-l"],
+            &["-lt"],
+            &["-lS"],
+            &["-lu"],
+            &["-lut"],
+            &["-ln"],
+            &["-lr"],
+            &["-l", "f_big"],
+        ],
+    );
+}
+
+#[test]
+fn long_format_with_inodes_and_classification_matches() {
+    need_ls!();
+    assert_long_same(&flat_tree(), &[&["-li"], &["-lF"], &["-liF"]]);
+}
+
+// ------------------------------------------------------------ GNU only
+
+fn hostile_tree() -> Fixture {
+    let f = Fixture::new();
+    for name in [
+        "evil\u{1b}[2J",
+        "line\nbreak",
+        "tab\tname",
+        "with space",
+        "plain",
+        "a$b",
+        "x*y",
+        "~tilde",
+        "#hash",
+        "eq=x",
+        "back\\slash",
+        "dq\"x",
+        "semi;colon",
+        "paren(s)",
+    ] {
+        f.file(name, 1, day(1));
+    }
+    f
+}
+
+#[test]
+fn gnu_access_time_sort_matches() {
+    need_gnu!();
+    // BSD ls only uses the access time with -t or -l
+    assert_same(&flat_tree(), &[&["-1u"], &["-1ur"], &["-1c"]]);
+}
+
+#[test]
+fn gnu_sort_and_filter_options_match() {
+    need_gnu!();
+    assert_same(
+        &standard_tree(),
+        &[
+            &["-1v"],
+            &["-1vr"],
+            &["-1X"],
+            &["-1U"],
+            &["-1", "--group-directories-first"],
+            &["-1r", "--group-directories-first"],
+            &["-1", "-I", "*.txt"],
+            &["-1", "-I", "a?", "-I", "*.rs"],
+            &["-1", "--hide=a*"],
+            &["-1a", "--hide=a*"],
+            &["-1A", "-I", ".*"],
+            &["-1B"],
+            &["-1", "--sort=size"],
+            &["-1", "--sort=time"],
+            &["-1", "--sort=version"],
+            &["-1", "--sort=extension"],
+            &["-1", "--sort=none"],
+        ],
+    );
+}
+
+#[test]
+fn gnu_long_format_options_match() {
+    need_gnu!();
+    assert_same(
+        &flat_tree(),
+        &[
+            &["-lh"],
+            &["-lg"],
+            &["-lo"],
+            &["-lgo"],
+            &["-lG"],
+            &["-ls"],
+            &["-lsh"],
+            &["-lsi"],
+            &["-l", "--block-size=K"],
+            &["-l", "--block-size=100"],
+            &["-s"],
+            &["-1s"],
+            &["-l", "--time-style=long-iso"],
+            &["-l", "--time-style=iso"],
+            &["-l", "--time-style=full-iso"],
+            &["-l", "--time-style=+%Y/%m/%d"],
+            &["-l", "--time-style=+new %H\nold %Y"],
+            &["--full-time"],
+            &["-l", "--time=atime"],
+            &["-lt", "--time=atime"],
+            &["-n"],
+            &["-ln"],
+            &["-lk"],
+            &["-lA"],
+        ],
+    );
+}
+
+#[test]
+fn gnu_layouts_match() {
+    need_gnu!();
+    let f = Fixture::new();
+    for n in ["a", "bb", "ccc", "dd", "e", "ffff", "g", "hhhhh", "i", "jj"] {
+        f.file(n, 1, day(1));
+    }
+    assert_same(
+        &f,
+        &[
+            &["-C", "-w", "20"],
+            &["-C", "-w", "30"],
+            &["-C", "-w", "80"],
+            &["-C", "-w", "7"],
+            &["-C", "-w", "1"],
+            &["-x", "-w", "20"],
+            &["-x", "-w", "30"],
+            &["-x", "-w", "80"],
+            &["-m", "-w", "20"],
+            &["-m", "-w", "30"],
+            &["-m", "-w", "80"],
+            &["-C", "-w", "0"],
+            &["-Cs", "-w", "30"],
+            &["-Ci", "-w", "40"],
+            &["-CF", "-w", "30"],
+        ],
+    );
+}
+
+#[test]
+fn gnu_quoting_styles_match() {
+    need_gnu!();
+    let mut cases: Vec<Vec<&str>> = Vec::new();
+    for style in [
+        "literal",
+        "shell",
+        "shell-always",
+        "shell-escape",
+        "shell-escape-always",
+        "c",
+        "escape",
+    ] {
+        cases.push(vec![
+            "-1",
+            Box::leak(format!("--quoting-style={style}").into_boxed_str()),
+        ]);
+    }
+    for flags in ["-1b", "-1Q", "-1N", "-1q"] {
+        cases.push(vec![flags]);
+    }
+    cases.push(vec!["-m", "-w", "60", "--quoting-style=shell-escape"]);
+    cases.push(vec!["-C", "-w", "60", "--quoting-style=shell-escape"]);
+    cases.push(vec!["-l", "--quoting-style=shell-escape"]);
+    let refs: Vec<&[&str]> = cases.iter().map(Vec::as_slice).collect();
+    assert_same(&hostile_tree(), &refs);
+}
+
+#[test]
+fn gnu_quoting_of_symlink_targets_and_headings_matches() {
+    need_gnu!();
+    let f = Fixture::new();
+    f.dir("d e")
+        .file("d e/f g", 1, day(1))
+        .link("t\u{1b}t", "ln");
+    assert_same(
+        &f,
+        &[
+            &["-R", "--quoting-style=shell-escape"],
+            &["-R", "-Q"],
+            &["-R", "-b"],
+            &["-1", "d e", "--quoting-style=shell-escape"],
+        ],
+    );
+}

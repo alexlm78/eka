@@ -127,12 +127,21 @@ impl Quoter {
     pub fn quote(&self, name: &[u8]) -> Vec<u8> {
         match self.style {
             QuotingStyle::Literal => self.literal(name),
-            QuotingStyle::Escape => escape(name),
+            QuotingStyle::Escape => escape(name, true),
             QuotingStyle::C => c_style(name),
             QuotingStyle::Shell => self.shell(name, false, false),
             QuotingStyle::ShellAlways => self.shell(name, true, false),
             QuotingStyle::ShellEscape => self.shell(name, false, true),
             QuotingStyle::ShellEscapeAlways => self.shell(name, true, true),
+        }
+    }
+
+    /// Quotes a directory heading. Like GNU ls, the escape style does not
+    /// escape spaces there (it does in file names).
+    pub fn quote_heading(&self, name: &[u8]) -> Vec<u8> {
+        match self.style {
+            QuotingStyle::Escape => escape(name, false),
+            _ => self.quote(name),
         }
     }
 
@@ -148,10 +157,17 @@ impl Quoter {
         matches!(self.style, QuotingStyle::Shell | QuotingStyle::ShellEscape)
     }
 
+    /// Whether a piece is printed untouched in the styles that show names
+    /// as they are. A newline is always replaced, as in GNU ls: left alone it
+    /// would split one entry across two lines.
+    fn shows_raw(&self, piece: Piece) -> bool {
+        piece.is_printable() || (!self.hide_control && !matches!(piece, Piece::Ch('\n')))
+    }
+
     fn literal(&self, name: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(name.len());
         for p in pieces(name) {
-            if p.is_printable() || !self.hide_control {
+            if self.shows_raw(p) {
                 push_piece_raw(&mut out, p);
             } else {
                 out.push(b'?');
@@ -204,7 +220,7 @@ impl Quoter {
         for p in pieces(name) {
             match p {
                 Piece::Ch('\'') => out.extend_from_slice(b"'\\''"),
-                p if p.is_printable() || !self.hide_control => push_piece_raw(&mut out, p),
+                p if self.shows_raw(p) => push_piece_raw(&mut out, p),
                 _ => out.push(b'?'),
             }
         }
@@ -224,12 +240,12 @@ fn needs_shell_quotes(name: &[u8]) -> bool {
     })
 }
 
-fn escape(name: &[u8]) -> Vec<u8> {
+fn escape(name: &[u8], escape_space: bool) -> Vec<u8> {
     let mut out = Vec::with_capacity(name.len());
     for p in pieces(name) {
         match p {
             Piece::Ch('\\') => out.extend_from_slice(b"\\\\"),
-            Piece::Ch(' ') => out.extend_from_slice(b"\\ "),
+            Piece::Ch(' ') if escape_space => out.extend_from_slice(b"\\ "),
             p if p.is_printable() => push_piece_raw(&mut out, p),
             p => push_escape(&mut out, p),
         }
@@ -271,6 +287,10 @@ mod tests {
     fn test_literal_keeps_names_and_optionally_hides_control() {
         assert_eq!(q(QuotingStyle::Literal, false, b"a b"), "a b");
         assert_eq!(q(QuotingStyle::Literal, false, b"a\x1bb"), "a\x1bb");
+        // a newline would split the entry across lines, so it is never raw
+        assert_eq!(q(QuotingStyle::Literal, false, b"a\nb"), "a?b");
+        assert_eq!(q(QuotingStyle::Shell, false, b"a\nb"), "'a?b'");
+        assert_eq!(q(QuotingStyle::ShellAlways, false, b"a\nb"), "'a?b'");
         assert_eq!(q(QuotingStyle::Literal, true, b"a\x1b[2Jb"), "a?[2Jb");
         assert_eq!(q(QuotingStyle::Literal, true, b"a\xffb"), "a?b");
         assert_eq!(
@@ -311,6 +331,18 @@ mod tests {
             q(QuotingStyle::Escape, false, "caf\u{e9}".as_bytes()),
             "caf\u{e9}"
         );
+    }
+
+    #[test]
+    fn test_heading_does_not_escape_spaces_in_escape_style() {
+        let quoter = Quoter::new(QuotingStyle::Escape, false);
+        assert_eq!(quoter.quote(b"./d e"), b"./d\\ e");
+        assert_eq!(quoter.quote_heading(b"./d e"), b"./d e");
+        // control characters are still escaped
+        assert_eq!(quoter.quote_heading(b"d\x1b"), b"d\\033");
+        // other styles are unchanged
+        let shell = Quoter::new(QuotingStyle::ShellEscape, false);
+        assert_eq!(shell.quote_heading(b"./d e"), shell.quote(b"./d e"));
     }
 
     #[test]

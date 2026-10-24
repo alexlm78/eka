@@ -15,7 +15,7 @@ use directory::{io_message, read_directory, read_directory_recursive, shown};
 use formatter::Formatter;
 use std::fs;
 use std::io::{self, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process;
 use types::FileEntry;
 
@@ -62,7 +62,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
     let mut status = 0;
     let fmt = Formatter::new(args);
     let mut files: Vec<FileEntry> = Vec::new();
-    let mut dirs: Vec<&str> = Vec::new();
+    let mut dirs: Vec<FileEntry> = Vec::new();
 
     // Classify arguments: non-directories (and everything under -d) are listed
     // as themselves, first; directories are expanded afterwards.
@@ -78,7 +78,16 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
         };
         let meta = meta.or_else(|_| fs::symlink_metadata(p));
         match meta {
-            Ok(m) if m.is_dir() && !args.directories => dirs.push(path),
+            // Directory operands become entries too, so they sort like any other
+            Ok(m) if m.is_dir() && !args.directories => {
+                match FileEntry::with_name(p.to_path_buf(), p.as_os_str().to_owned(), follows) {
+                    Ok(e) => dirs.push(e),
+                    Err(e) => {
+                        eprintln!("eka: cannot access {}: {}", shown(p), io_message(&e));
+                        status = EXIT_SERIOUS;
+                    }
+                }
+            }
             Ok(_) => match FileEntry::with_name(
                 p.to_path_buf(),
                 p.as_os_str().to_owned(),
@@ -106,14 +115,18 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
         first = false;
     }
 
+    // ls orders the directory operands with the same options as everything else
+    directory::sort_entries(&mut dirs, args);
+
     let mut had_error = false;
-    for path in dirs {
+    for operand in &dirs {
+        let path = operand.path.as_path();
         let listing = if args.recursive {
-            read_directory_recursive(Path::new(path), args, &mut had_error)
+            read_directory_recursive(path, args, &mut had_error)
         } else {
-            read_directory(Path::new(path), args, &mut had_error).map(|entries| {
+            read_directory(path, args, &mut had_error).map(|entries| {
                 vec![directory::DirectoryEntry {
-                    path: PathBuf::from(path),
+                    path: path.to_path_buf(),
                     entries,
                 }]
             })
@@ -137,7 +150,7 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
             Err(e) => {
                 eprintln!(
                     "eka: cannot open directory {}: {}",
-                    shown(Path::new(path)),
+                    shown(path),
                     io_message(&e)
                 );
                 status = EXIT_SERIOUS;

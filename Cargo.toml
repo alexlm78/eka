@@ -2,6 +2,7 @@
 name = "eka"
 version = "0.2.0"
 edition = "2024"
+rust-version = "1.88"
 description = "A modern replacement for ls with colors"
 authors = ["Eka Contributors"]
 license = "MIT"

@@ -24,6 +24,8 @@ pub struct Formatter<'a> {
     /// Caches uid/gid lookups for the lifetime of the run
     users: UsersCache,
     quoter: Quoter,
+    /// Tab stop distance for column padding; 0 pads with spaces only
+    tab_size: usize,
     /// Set per listing: some name is quoted, so unquoted ones get a leading space
     pad_unquoted: Cell<bool>,
 }
@@ -46,6 +48,8 @@ impl<'a> Formatter<'a> {
             width,
             users: UsersCache::new(),
             quoter: Quoter::new(args.quoting_style(tty), args.hide_control(tty)),
+            // GNU ls drops the tabs when the width is unlimited
+            tab_size: if width == 0 { 0 } else { args.tab_size() },
             pad_unquoted: Cell::new(false),
         }
     }
@@ -54,8 +58,11 @@ impl<'a> Formatter<'a> {
     pub fn format_short(&self, out: &mut impl Write, entries: &[FileEntry]) -> io::Result<()> {
         let inode_w = self.inode_width(entries);
         let size_w = self.block_width(entries);
-        // GNU ls does not align names in the comma format
-        self.set_alignment(entries, self.layout != Layout::Commas);
+        // GNU ls pads unquoted names in the column and long layouts only
+        self.set_alignment(
+            entries,
+            matches!(self.layout, Layout::Columns | Layout::Across),
+        );
         match self.layout {
             Layout::Columns => self.write_grid(out, entries, inode_w, size_w, false),
             Layout::Across => self.write_grid(out, entries, inode_w, size_w, true),
@@ -84,6 +91,8 @@ impl<'a> Formatter<'a> {
             .collect();
         let plan = layout::plan(&widths, self.width, across);
         for row in 0..plan.rows {
+            // Column where the current cell starts
+            let mut start = 0;
             for col in 0..plan.cols() {
                 let Some(i) = plan.index(row, col) else {
                     continue;
@@ -91,8 +100,9 @@ impl<'a> Formatter<'a> {
                 self.write_cell(out, &entries[i], inode_w, size_w)?;
                 // Pad only when another cell follows on this row
                 if plan.index(row, col + 1).is_some() {
-                    let pad = plan.col_widths[col] - widths[i] + 2;
-                    write!(out, "{:pad$}", "")?;
+                    let next = start + plan.col_widths[col] + 2;
+                    indent(out, start + widths[i], next, self.tab_size)?;
+                    start = next;
                 }
             }
             out.write_all(b"\n")?;
@@ -193,7 +203,7 @@ impl<'a> Formatter<'a> {
 
     /// Writes a directory heading such as `src:` with the path quoted
     pub fn write_heading(&self, out: &mut impl Write, path: &std::path::Path) -> io::Result<()> {
-        out.write_all(&self.quoter.quote(path.as_os_str().as_bytes()))?;
+        out.write_all(&self.quoter.quote_heading(path.as_os_str().as_bytes()))?;
         out.write_all(b":\n")
     }
 
@@ -249,7 +259,7 @@ impl<'a> Formatter<'a> {
         if self.args.human_readable {
             writeln!(out, "total {}", human_size(bytes))
         } else {
-            writeln!(out, "total {}", blocks)
+            writeln!(out, "total {}{}", blocks, self.block_suffix())
         }
     }
 
@@ -276,7 +286,12 @@ impl<'a> Formatter<'a> {
     }
 
     fn display_block_size(&self) -> u64 {
-        self.args.block_size.unwrap_or(1024)
+        self.args.block_size.map_or(1024, |b| b.bytes)
+    }
+
+    /// Suffix printed after scaled sizes (`--block-size=K` prints `16K`)
+    fn block_suffix(&self) -> &'static str {
+        self.args.block_size.map_or("", |b| b.suffix)
     }
 
     fn allocated_size(&self, entry: &FileEntry) -> String {
@@ -284,7 +299,11 @@ impl<'a> Formatter<'a> {
         if self.args.human_readable {
             human_size(bytes)
         } else {
-            bytes.div_ceil(self.display_block_size()).to_string()
+            format!(
+                "{}{}",
+                bytes.div_ceil(self.display_block_size()),
+                self.block_suffix()
+            )
         }
     }
 
@@ -301,7 +320,11 @@ impl<'a> Formatter<'a> {
         let size = if self.args.human_readable {
             human_size(entry.size)
         } else if let Some(block_size) = self.args.block_size {
-            entry.size.div_ceil(block_size).to_string()
+            format!(
+                "{}{}",
+                entry.size.div_ceil(block_size.bytes),
+                block_size.suffix
+            )
         } else {
             entry.size.to_string()
         };
@@ -352,6 +375,21 @@ struct LongRow {
     group: String,
     size: String,
     time: String,
+}
+
+/// Moves from column `from` to column `to` with tabs where a tab stop is
+/// crossed and spaces otherwise, the way GNU ls pads its columns
+fn indent(out: &mut impl Write, mut from: usize, to: usize, tab_size: usize) -> io::Result<()> {
+    while from < to {
+        if tab_size != 0 && to / tab_size > (from + 1) / tab_size {
+            out.write_all(b"\t")?;
+            from += tab_size - from % tab_size;
+        } else {
+            out.write_all(b" ")?;
+            from += 1;
+        }
+    }
+    Ok(())
 }
 
 /// Display columns of a name; invalid UTF-8 bytes count as one column each
@@ -433,8 +471,8 @@ pub fn format_time(t: SystemTime, now: SystemTime, style: &TimeStyle) -> String 
         ),
         TimeStyle::Custom(format) => {
             let format = match (recent, format.split_once('\n')) {
-                (true, Some((recent, _))) => recent,
-                (false, Some((_, old))) => old,
+                (true, Some((_, recent))) => recent,
+                (false, Some((old, _))) => old,
                 (_, None) => format,
             };
             let mut shown = String::new();
@@ -473,6 +511,7 @@ mod tests {
             uid: NO_USER,
             gid: NO_USER,
             blocks: 8,
+            links_to_dir: false,
         }
     }
 
@@ -639,6 +678,7 @@ mod tests {
         let args = Args {
             columns: true,
             width: Some(12),
+            tabsize: Some(0),
             ..Default::default()
         };
         let out = render_with(args, &names(&["aa", "bb", "cc", "dd", "ee"]));
@@ -651,6 +691,7 @@ mod tests {
         let args = Args {
             across: true,
             width: Some(12),
+            tabsize: Some(0),
             ..Default::default()
         };
         let out = render_with(args, &names(&["aa", "bb", "cc", "dd", "ee"]));
@@ -662,6 +703,7 @@ mod tests {
         let args = Args {
             columns: true,
             width: Some(12),
+            tabsize: Some(0),
             ..Default::default()
         };
         let out = render_with(args, &names(&["a", "longname", "b", "c"]));
@@ -775,7 +817,7 @@ mod tests {
         item.blocks = 3;
         let args = Args {
             size: true,
-            block_size: Some(1000),
+            block_size: Some(crate::cli::BlockSize::of(1000)),
             ..Default::default()
         };
         assert_eq!(render(&args, &[item.clone()], false), b"2 f\n");
@@ -832,7 +874,7 @@ mod tests {
         let args = Args {
             size: true,
             human_readable: true,
-            block_size: Some(1),
+            block_size: Some(crate::cli::BlockSize::of(1)),
             ..Default::default()
         };
         assert_eq!(render(&args, &[item.clone()], false), b"1.5K f\n");
@@ -851,11 +893,11 @@ mod tests {
         assert!(format_time(recent, now, &TimeStyle::Iso).contains(':'));
         assert!(format_time(old, now, &TimeStyle::Iso).ends_with(' '));
         assert_eq!(
-            format_time(recent, now, &TimeStyle::Custom("recent\nold".to_string())),
+            format_time(recent, now, &TimeStyle::Custom("old\nrecent".to_string())),
             "recent"
         );
         assert_eq!(
-            format_time(old, now, &TimeStyle::Custom("recent\nold".to_string())),
+            format_time(old, now, &TimeStyle::Custom("old\nrecent".to_string())),
             "old"
         );
         assert!(format_time(recent, now, &TimeStyle::FullIso).contains('.'));
@@ -871,30 +913,121 @@ mod tests {
     }
 
     #[test]
-    fn test_shell_escape_aligns_unquoted_names_when_mixed() {
-        let out = render_with(
-            quoting_args(QuotingStyle::ShellEscape),
-            &names(&["a b", "plain"]),
+    fn test_shell_styles_pad_unquoted_names_only_in_column_layouts() {
+        let cols = |style| Args {
+            columns: true,
+            width: Some(80),
+            tabsize: Some(0),
+            ..quoting_args(style)
+        };
+        let list = names(&["a b", "plain"]);
+        // columns: " plain" carries a leading space so names line up
+        assert_eq!(
+            render_with(cols(QuotingStyle::ShellEscape), &list),
+            "'a b'   plain\n"
         );
-        assert_eq!(out, "'a b'\n plain\n");
         // nothing quoted: no padding
-        let out = render_with(quoting_args(QuotingStyle::ShellEscape), &names(&["x", "y"]));
-        assert_eq!(out, "x\ny\n");
-        // always-quoting styles and the comma layout never pad
-        let out = render_with(
-            quoting_args(QuotingStyle::ShellEscapeAlways),
-            &names(&["a b", "plain"]),
+        assert_eq!(
+            render_with(cols(QuotingStyle::ShellEscape), &names(&["x", "y"])),
+            "x  y\n"
         );
-        assert_eq!(out, "'a b'\n'plain'\n");
+        // always-quoting styles never pad
+        assert_eq!(
+            render_with(cols(QuotingStyle::ShellEscapeAlways), &list),
+            "'a b'  'plain'\n"
+        );
+        // one per line and comma layouts never pad (GNU ls does not either)
+        assert_eq!(
+            render_with(quoting_args(QuotingStyle::ShellEscape), &list),
+            "'a b'\nplain\n"
+        );
         let commas = Args {
             commas: true,
             width: Some(80),
             ..quoting_args(QuotingStyle::ShellEscape)
         };
-        assert_eq!(
-            render_with(commas, &names(&["a b", "plain"])),
-            "'a b', plain\n"
+        assert_eq!(render_with(commas, &list), "'a b', plain\n");
+    }
+
+    #[test]
+    fn test_long_format_pads_unquoted_names_when_others_are_quoted() {
+        let args = Args {
+            color: Some(crate::cli::ColorWhen::Never),
+            long: true,
+            ..quoting_args(QuotingStyle::ShellEscape)
+        };
+        let render_long = |list: &[&str]| {
+            let mut buf = Vec::new();
+            Formatter::new(&args)
+                .format_long(&mut buf, &names(list))
+                .unwrap();
+            String::from_utf8(buf).unwrap()
+        };
+        let out = render_long(&["a b", "plain"]);
+        let rows: Vec<&str> = out.lines().collect();
+        assert!(rows[0].ends_with(" 'a b'"), "{out}");
+        assert!(
+            rows[1].ends_with("  plain"),
+            "extra space before the name: {out}"
         );
+        // nothing quoted: no extra space
+        let out = render_long(&["x", "y"]);
+        assert!(
+            out.lines()
+                .all(|l| !l.ends_with("  x") && !l.ends_with("  y")),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn test_unlimited_width_uses_no_tabs() {
+        let args = Args {
+            columns: true,
+            width: Some(0),
+            ..Default::default()
+        };
+        // "dd" would end before a tab stop at the default tab size
+        let out = render_with(args, &names(&["a", "bb", "ccc", "dd", "e", "ffff"]));
+        assert!(!out.contains('\t'), "{out:?}");
+    }
+
+    #[test]
+    fn test_indent_uses_tabs_only_when_a_tab_stop_is_crossed() {
+        let pad = |from, to, tab| {
+            let mut out = Vec::new();
+            indent(&mut out, from, to, tab).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        assert_eq!(pad(1, 3, 8), "  "); // no stop between
+        assert_eq!(pad(1, 10, 8), "\t  "); // 1 -> 8 by tab, then two spaces
+        assert_eq!(pad(5, 9, 8), "\t "); // crosses 8
+        assert_eq!(pad(7, 9, 8), "  "); // moving 1 column over a stop: spaces
+        assert_eq!(pad(0, 16, 8), "\t\t");
+        assert_eq!(pad(3, 3, 8), "");
+        assert_eq!(pad(1, 10, 0), "         "); // -T 0: spaces only
+        assert_eq!(pad(1, 10, 4), "\t\t  "); // 1 -> 4 -> 8, then two spaces to 10
+    }
+
+    #[test]
+    fn test_columns_pad_with_tabs_like_gnu_ls() {
+        let args = Args {
+            columns: true,
+            width: Some(80),
+            ..Default::default()
+        };
+        // "aaaaaa" ends at column 6 and the next column starts at 8: one tab.
+        // The following gaps do not cross a stop and use spaces.
+        let out = render_with(args, &names(&["aaaaaa", "b", "c", "d"]));
+        assert_eq!(out, "aaaaaa\tb  c  d\n");
+        // -T 0 turns tabs off
+        let spaces = Args {
+            columns: true,
+            width: Some(80),
+            tabsize: Some(0),
+            ..Default::default()
+        };
+        let out = render_with(spaces, &names(&["aaaaaa", "b", "c", "d"]));
+        assert_eq!(out, "aaaaaa  b  c  d\n");
     }
 
     #[test]

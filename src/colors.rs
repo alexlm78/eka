@@ -236,6 +236,7 @@ mod tests {
             uid: 0,
             gid: 0,
             blocks: 0,
+            links_to_dir: false,
         }
     }
 
