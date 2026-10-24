@@ -229,7 +229,6 @@ mod tests {
             modified: std::time::UNIX_EPOCH,
             accessed: std::time::UNIX_EPOCH,
             changed: std::time::UNIX_EPOCH,
-            is_hidden: false,
             symlink_target: None,
             inode: 0,
             nlink: 1,

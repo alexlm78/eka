@@ -53,6 +53,7 @@ pub fn read_directory(
         }
     }
 
+    let lazy = !needs_metadata(args);
     for entry in fs::read_dir(path)? {
         let entry = match entry {
             Ok(e) => e,
@@ -62,9 +63,18 @@ pub fn read_directory(
                 continue;
             }
         };
-        match FileEntry::with_name(entry.path(), entry.file_name(), args.dereference()) {
-            Ok(fe) if should_list(&fe, args) => file_entries.push(fe),
-            Ok(_) => {}
+        // Names are filtered before any system call, so hidden and ignored
+        // entries never cost a stat
+        if !name_listed(entry.file_name().as_bytes(), args) {
+            continue;
+        }
+        let built = if lazy {
+            FileEntry::from_dir_entry(&entry)
+        } else {
+            FileEntry::with_name(entry.path(), entry.file_name(), args.dereference())
+        };
+        match built {
+            Ok(fe) => file_entries.push(fe),
             Err(e) => {
                 eprintln!(
                     "eka: cannot access {}: {}",
@@ -80,10 +90,11 @@ pub fn read_directory(
     Ok(file_entries)
 }
 
-/// Whether an entry remains after visibility and name-pattern filtering.
-fn should_list(entry: &FileEntry, args: &Args) -> bool {
-    let name = entry.name.as_bytes();
-    if !args.show_hidden() && entry.is_hidden {
+/// Whether an entry named `name` remains after visibility and name-pattern
+/// filtering. Needs only the name, so it runs before any stat.
+fn name_listed(name: &[u8], args: &Args) -> bool {
+    let hidden = name.first() == Some(&b'.');
+    if !args.show_hidden() && hidden {
         return false;
     }
     if args.ignore_backups && name.ends_with(b"~") {
@@ -101,6 +112,27 @@ fn should_list(entry: &FileEntry, args: &Args) -> bool {
             .hide
             .iter()
             .any(|pattern| glob::matches(pattern.as_bytes(), name))
+}
+
+/// Whether an entry remains after filtering (used for "." and "..").
+fn should_list(entry: &FileEntry, args: &Args) -> bool {
+    name_listed(entry.name.as_bytes(), args)
+}
+
+/// Whether the output needs more than name, type and inode, so that every
+/// entry must be stat'ed. When it does not (a plain `eka` or `eka -1R` on a
+/// pipe), reading the directory is enough, as with `ls -f`.
+pub fn needs_metadata(args: &Args) -> bool {
+    use crate::cli::SortField;
+    static COLOR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let color = *COLOR.get_or_init(|| crate::colors::color_enabled(args.color));
+    args.is_long()
+        || args.size
+        || args.classify // `*` needs the executable bit
+        || args.dereference()
+        || color // executables are colored by mode, broken links need the target
+        || args.group_directories_first // a symlink to a directory groups as a directory
+        || matches!(args.sort_field(), SortField::Size | SortField::Time)
 }
 
 /// A directory on the path from the listing root, for cycle detection
@@ -292,7 +324,6 @@ mod tests {
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,
             changed: SystemTime::UNIX_EPOCH,
-            is_hidden: name.starts_with('.'),
             symlink_target: None,
             inode: 0,
             nlink: 1,
@@ -639,5 +670,86 @@ mod tests {
             ..Default::default()
         };
         assert!(read_directory_recursive(Path::new("/nonexistent-eka"), &args, &mut err).is_err());
+    }
+
+    #[test]
+    fn test_metadata_is_needed_only_when_the_output_uses_it() {
+        let no_color = |args: Args| Args {
+            color: Some(crate::cli::ColorWhen::Never),
+            ..args
+        };
+        // names, types and inodes come from the directory itself
+        assert!(!needs_metadata(&no_color(Args::default())));
+        assert!(!needs_metadata(&no_color(Args {
+            inode: true,
+            ..Default::default()
+        })));
+        assert!(!needs_metadata(&no_color(Args {
+            recursive: true,
+            all: true,
+            ..Default::default()
+        })));
+        assert!(!needs_metadata(&no_color(Args {
+            sort: Some(SortField::Extension),
+            ..Default::default()
+        })));
+        // anything that prints or orders by size, time, mode or owner needs a stat
+        for args in [
+            Args {
+                long: true,
+                ..Default::default()
+            },
+            Args {
+                numeric_uid_gid: true,
+                ..Default::default()
+            },
+            Args {
+                size: true,
+                ..Default::default()
+            },
+            Args {
+                classify: true,
+                ..Default::default()
+            },
+            Args {
+                deref_all: true,
+                ..Default::default()
+            },
+            Args {
+                group_directories_first: true,
+                ..Default::default()
+            },
+            Args {
+                sort_size: true,
+                ..Default::default()
+            },
+            Args {
+                sort_time: true,
+                ..Default::default()
+            },
+            Args {
+                sort_access: true,
+                ..Default::default()
+            },
+        ] {
+            assert!(needs_metadata(&no_color(args)));
+        }
+    }
+
+    #[test]
+    fn test_lazy_entries_match_the_full_ones_for_name_type_and_inode() {
+        let d = tmp("lazy");
+        fs::create_dir(d.join("dir")).unwrap();
+        fs::write(d.join("f.png"), b"x").unwrap();
+        std::os::unix::fs::symlink("f.png", d.join("ln")).unwrap();
+        for entry in fs::read_dir(&d).unwrap() {
+            let entry = entry.unwrap();
+            let lazy = FileEntry::from_dir_entry(&entry).unwrap();
+            let full = FileEntry::with_name(entry.path(), entry.file_name(), false).unwrap();
+            assert_eq!(lazy.name, full.name);
+            assert_eq!(lazy.inode, full.inode);
+            assert_eq!(lazy.file_type, full.file_type, "{:?}", lazy.name);
+        }
+        fs::remove_dir_all(d).unwrap();
     }
 }

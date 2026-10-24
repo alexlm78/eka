@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::{DirEntryExt, FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -104,7 +104,6 @@ pub struct FileEntry {
     pub modified: SystemTime,
     pub accessed: SystemTime,
     pub changed: SystemTime,
-    pub is_hidden: bool,
     pub symlink_target: Option<OsString>,
     pub inode: u64,
     pub nlink: u64,
@@ -158,7 +157,6 @@ impl FileEntry {
             metadata = target_meta;
         }
         let bytes = name.as_bytes();
-        let is_hidden = bytes.first() == Some(&b'.');
 
         let is_symlink = metadata.file_type().is_symlink();
         let mut file_type = FileType::classify(bytes, &metadata);
@@ -180,7 +178,6 @@ impl FileEntry {
             modified: unix_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_time(metadata.atime(), metadata.atime_nsec()),
             changed: unix_time(metadata.ctime(), metadata.ctime_nsec()),
-            is_hidden,
             symlink_target,
             inode: metadata.ino(),
             nlink: metadata.nlink(),
@@ -189,6 +186,53 @@ impl FileEntry {
             blocks: metadata.blocks(),
             links_to_dir,
             path,
+        })
+    }
+
+    /// Creates an entry from a directory read without calling stat: the type
+    /// and inode come from the directory itself. Everything else keeps a
+    /// neutral value, so use this only when the output needs just the name,
+    /// the type and the inode (see `Args::needs_metadata`).
+    pub fn from_dir_entry(entry: &fs::DirEntry) -> std::io::Result<Self> {
+        let name = entry.file_name();
+        let bytes = name.as_bytes();
+        let ft = entry.file_type()?;
+        let file_type = if ft.is_dir() {
+            FileType::Directory
+        } else if ft.is_symlink() {
+            FileType::Symlink
+        } else if ft.is_fifo() {
+            FileType::Fifo
+        } else if ft.is_socket() {
+            FileType::Socket
+        } else if ft.is_char_device() {
+            FileType::CharDevice
+        } else if ft.is_block_device() {
+            FileType::BlockDevice
+        } else {
+            FileType::from_extension(bytes)
+        };
+        Ok(Self {
+            file_type,
+            size: 0,
+            permissions: String::new(),
+            modified: SystemTime::UNIX_EPOCH,
+            accessed: SystemTime::UNIX_EPOCH,
+            changed: SystemTime::UNIX_EPOCH,
+            symlink_target: None,
+            inode: entry.ino(),
+            nlink: 0,
+            uid: 0,
+            gid: 0,
+            blocks: 0,
+            links_to_dir: false,
+            // Only directories are visited again, so only they keep a path
+            path: if file_type == FileType::Directory {
+                entry.path()
+            } else {
+                PathBuf::new()
+            },
+            name,
         })
     }
 

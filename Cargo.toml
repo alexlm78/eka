@@ -1,6 +1,6 @@
 [package]
 name = "eka"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A modern replacement for ls with colors"
@@ -23,3 +23,10 @@ path = "src/main.rs"
 
 [package.metadata.man]
 sections = ["user-utils"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3

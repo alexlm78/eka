@@ -504,7 +504,6 @@ mod tests {
             modified: SystemTime::now(),
             accessed: SystemTime::UNIX_EPOCH,
             changed: SystemTime::UNIX_EPOCH,
-            is_hidden: name.starts_with(b"."),
             symlink_target: None,
             inode: 12345,
             nlink: 1,

@@ -2,7 +2,7 @@
 
 Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It aims to match `ls` in flags and output while improving memory use, speed and safety, and it adds color by default on terminals.
 
-> **Status:** v0.2.0, work in progress. Listing, sorting, columns, the long format and time options are implemented; name quoting and a few GNU options are still missing. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status:** v0.3.0, the first public release. It is not 1.0 yet: names sort bytewise (like GNU `ls` in the `C` locale, not in a UTF-8 locale), and a few GNU options are missing. See [Known differences](#known-differences-from-gnu-ls) and the [CHANGELOG](CHANGELOG.md).
 
 ## Features
 
@@ -17,6 +17,18 @@ Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It
 - **Unix only**: macOS and Linux
 
 ## Installation
+
+### From a release
+
+Download the archive for your system from the [releases page](https://github.com/alexlm78/eka/releases) (macOS and Linux, x86-64 and ARM64), check it against `SHA256SUMS`, and unpack it. Each archive holds the `eka` binary, the man page, the README, the license and the changelog:
+
+```bash
+tar -xzf eka-0.3.0-aarch64-apple-darwin.tar.gz
+install -m 755 eka-0.3.0-aarch64-apple-darwin/eka /usr/local/bin/eka
+install -m 644 eka-0.3.0-aarch64-apple-darwin/eka.1 /usr/local/share/man/man1/eka.1
+```
+
+Release archives carry a build-provenance attestation; verify one with `gh attestation verify FILE --repo alexlm78/eka`.
 
 ### From Source
 
@@ -153,7 +165,24 @@ If `LS_COLORS` is set, Eka uses it (keys `di ln ex or pi so bd cd fi` and `*.ext
 | Archive | Blue |
 | Regular file | Default |
 
+## Performance
+
+Eka reads a directory with a single pass and calls `stat` only for the information the output needs: names alone (`eka`, `eka -1R`, `-i`, `-U`) never touch the files, as with `ls -f`, while `-l`, `-s`, `-F`, color, and sorting by size or time do.
+
+Measured with `scripts/bench.sh` (hyperfine, 15 runs) on an Apple M-series Mac with 10 cores, APFS, macOS and Homebrew GNU coreutils; one fixture with 20,000 files in one directory and one with 20,000 files in 2,200 directories:
+
+| Case | eka | GNU ls | BSD ls | eza |
+|------|-----|--------|--------|-----|
+| `-1`, 20,000 files | **22 ms**, 15 MB | 67 ms, 8 MB | 88 ms, 4 MB | 137 ms, 48 MB |
+| `-l`, 20,000 files | **85 ms**, 22 MB | 133 ms, 9 MB | 214 ms, 10 MB | 497 ms, 101 MB |
+| `-R`, 2,200 directories | 74 ms, 14 MB | 74 ms, 2 MB | 228 ms, 1 MB | 202 ms, 8 MB |
+| start-up, 30 files | 4.5 ms, 6 MB | 3.2 ms, 2 MB | 2.3 ms, 1 MB | 8.7 ms, 7 MB |
+
+Eka is faster than the others on large flat listings and ties GNU ls on recursion, but it **uses more memory** (it keeps every entry of a directory before sorting, where `ls` streams the unsorted case) and **starts slower** than the C implementations (a Rust program that does nothing starts in about 2.6 ms on this machine; the remaining ~2 ms is eka's option parsing and set-up). Results depend on the file system and on the cache; run `scripts/bench.sh` to measure your own.
+
 ## Known differences from GNU `ls`
+
+- **Sort order:** names are compared bytewise, like GNU `ls` in the `C` locale. In a UTF-8 locale GNU `ls` sorts by collation rules (`apple Apple2 banana Banana2`, where eka prints `Apple2 Banana2 apple banana`), so listings of mixed-case names differ.
 
 - Not implemented yet: `--author`, `--si`, `-D`, `-Z`.
 - Shell quoting always uses single quotes (`'it'\\''s'`), where GNU uses double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.
