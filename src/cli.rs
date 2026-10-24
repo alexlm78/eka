@@ -1,164 +1,176 @@
-use clap::{Parser, ValueHint};
+use clap::{ArgAction, Parser, ValueEnum, ValueHint};
 
-/// Sort options for directory listing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Sort keys for directory listing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum SortField {
     /// Sort by name (default)
     #[default]
     Name,
-    /// Sort by file size
+    /// Directory order, no sorting
+    None,
+    /// Sort by file size, largest first
     Size,
-    /// Sort by modification time
+    /// Sort by time, newest first
     Time,
-    /// Sort by access time
-    Access,
-    /// Sort by change time
-    Change,
     /// Sort by extension
     Extension,
 }
 
-impl SortField {
-    /// Parse sort field from string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "none" => None,
-            "name" | "filename" => Some(SortField::Name),
-            "size" | "S" => Some(SortField::Size),
-            "time" | "t" => Some(SortField::Time),
-            "access" | "u" => Some(SortField::Access),
-            "change" | "c" => Some(SortField::Change),
-            "extension" | "X" => Some(SortField::Extension),
-            _ => None,
-        }
-    }
+/// Which timestamp is shown (-l) and used for time sorting (-t)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimeField {
+    #[default]
+    Modified,
+    Accessed,
+    Changed,
+}
+
+/// When to colorize output (--color)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ColorWhen {
+    Always,
+    Auto,
+    Never,
 }
 
 /// Command-line arguments structure for eka
-#[derive(Parser, Debug)]
-#[command(name = "eka")]
-#[command(version = "0.2.0")]
-#[command(about = "A modern replacement for ls with colors", long_about = None)]
+#[derive(Parser, Debug, Default)]
+#[command(name = "eka", version, about = "A modern replacement for ls", long_about = None)]
+#[command(disable_help_flag = true)]
 pub struct Args {
+    /// Print help
+    #[arg(long, action = ArgAction::Help)]
+    pub help: Option<bool>,
+
     /// List one file per line
-    #[arg(short = '1', help = "List one file per line")]
+    #[arg(short = '1')]
     pub one_per_line: bool,
 
-    /// Force long listing format
-    #[arg(short = 'l', help = "Use a long listing format")]
+    /// Use a long listing format
+    #[arg(short = 'l')]
     pub long: bool,
 
-    /// List directories only
-    #[arg(
-        short = 'd',
-        long = "directories",
-        help = "List directories only"
-    )]
+    /// List directories themselves, not their contents
+    #[arg(short = 'd', long = "directory")]
     pub directories: bool,
 
-    /// Show hidden files (starting with .)
-    #[arg(short = 'a', long = "all", help = "Show hidden files")]
+    /// Do not ignore entries starting with .
+    #[arg(short = 'a', long = "all")]
     pub all: bool,
 
-    /// Display file sizes in human-readable format (KB, MB, GB)
-    #[arg(
-        short = 'H',
-        long = "human-readable",
-        help = "Display sizes in human-readable format"
-    )]
+    /// Do not list implied . and ..
+    #[arg(short = 'A', long = "almost-all")]
+    pub almost_all: bool,
+
+    /// With -l, print sizes in human readable format (1K 234M 2G)
+    #[arg(short = 'h', long = "human-readable")]
     pub human_readable: bool,
 
-    /// Append file type indicators (* / = > @ |)
-    #[arg(
-        short = 'F',
-        long = "classify",
-        help = "Append file type indicators"
-    )]
+    /// Append indicator (one of */=>@|) to entries
+    #[arg(short = 'F', long = "classify")]
     pub classify: bool,
 
     /// List subdirectories recursively
-    #[arg(
-        short = 'R',
-        long = "recursive",
-        help = "List subdirectories recursively"
-    )]
+    #[arg(short = 'R', long = "recursive")]
     pub recursive: bool,
 
-    /// Sort by file size (largest first)
-    #[arg(
-        short = 'S',
-        long = "sort_size",
-        help = "Sort by file size, largest first"
-    )]
+    /// Sort by file size, largest first
+    #[arg(short = 'S')]
     pub sort_size: bool,
 
-    /// Sort by modification time (newest first)
-    #[arg(
-        short = 't',
-        long = "sort_time",
-        help = "Sort by modification time, newest first"
-    )]
+    /// Sort by time, newest first
+    #[arg(short = 't')]
     pub sort_time: bool,
 
-    /// Sort by access time
-    #[arg(
-        short = 'u',
-        long = "sort_access",
-        help = "Sort by access time, newest first"
-    )]
+    /// With -lt: sort by, and show, access time; with -l: show access time
+    /// and sort by name; otherwise: sort by access time, newest first
+    #[arg(short = 'u')]
     pub sort_access: bool,
 
-    /// Reverse sort order
-    #[arg(
-        short = 'r',
-        long = "reverse",
-        help = "Reverse sort order"
-    )]
+    /// With -lt: sort by, and show, ctime; with -l: show ctime and sort by
+    /// name; otherwise: sort by ctime, newest first
+    #[arg(short = 'c')]
+    pub sort_change: bool,
+
+    /// Reverse order while sorting
+    #[arg(short = 'r', long = "reverse")]
     pub reverse: bool,
 
-    /// Print inode number
-    #[arg(
-        short = 'i',
-        long = "inode",
-        help = "Print inode number"
-    )]
+    /// Print the index number of each file
+    #[arg(short = 'i', long = "inode")]
     pub inode: bool,
 
-    /// Sort by WORD (name, size, time, extension)
-    #[arg(
-        long = "sort",
-        value_parser = clap::builder::PossibleValuesParser::new(["name", "size", "time", "access", "change", "extension", "none"]),
-        help = "Sort by WORD instead of name"
-    )]
-    pub sort: Option<String>,
+    /// Follow symbolic links listed on the command line
+    #[arg(short = 'H', long = "dereference-command-line")]
+    pub deref_cmdline: bool,
 
-    /// Directory(s) to list
+    /// When showing file information for a symbolic link, show the
+    /// information for the file the link references
+    #[arg(short = 'L', long = "dereference")]
+    pub deref_all: bool,
+
+    /// Do not follow symbolic links (default; overrides -H and -L)
+    #[arg(short = 'P')]
+    pub no_deref: bool,
+
+    /// Sort by WORD instead of name
+    #[arg(long, value_enum, value_name = "WORD")]
+    pub sort: Option<SortField>,
+
+    /// Colorize the output
     #[arg(
-        value_hint = ValueHint::DirPath,
-        default_value = "."
+        long,
+        value_enum,
+        value_name = "WHEN",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "always"
     )]
+    pub color: Option<ColorWhen>,
+
+    /// Files or directories to list
+    #[arg(value_hint = ValueHint::AnyPath, default_value = ".")]
     pub paths: Vec<String>,
 }
 
 impl Args {
-    /// Determines the sort field based on CLI arguments
-    pub fn get_sort_field(&self) -> SortField {
-        // Explicit sort flags take priority
-        if self.sort_size {
-            return SortField::Size;
+    /// Sort key. `--sort` wins; with -l, -u/-c only change the displayed time.
+    pub fn sort_field(&self) -> SortField {
+        if let Some(s) = self.sort {
+            s
+        } else if self.sort_size {
+            SortField::Size
+        } else if self.sort_time || ((self.sort_access || self.sort_change) && !self.long) {
+            SortField::Time
+        } else {
+            SortField::Name
         }
-        if self.sort_time {
-            return SortField::Time;
+    }
+
+    /// Timestamp used for display and time sorting
+    pub fn time_field(&self) -> TimeField {
+        if self.sort_change {
+            TimeField::Changed
+        } else if self.sort_access {
+            TimeField::Accessed
+        } else {
+            TimeField::Modified
         }
-        if self.sort_access {
-            return SortField::Access;
-        }
-        // Check --sort option
-        if let Some(ref sort_str) = self.sort {
-            return SortField::from_str(sort_str).unwrap_or_default();
-        }
-        // Default to name
-        SortField::Name
+    }
+
+    /// True when hidden entries are listed (-a or -A)
+    pub fn show_hidden(&self) -> bool {
+        self.all || self.almost_all
+    }
+
+    /// Follow every symlink (-L), unless -P is given
+    pub fn dereference(&self) -> bool {
+        self.deref_all && !self.no_deref
+    }
+
+    /// Follow symlinks named on the command line (-H or -L), unless -P is given
+    pub fn dereference_cmdline(&self) -> bool {
+        (self.deref_cmdline || self.deref_all) && !self.no_deref
     }
 }
 
@@ -166,94 +178,70 @@ impl Args {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_default_args() {
-        let args = Args {
-            one_per_line: false,
-            long: false,
-            directories: false,
-            all: false,
-            human_readable: false,
-            classify: false,
-            recursive: false,
-            sort_size: false,
-            sort_time: false,
-            sort_access: false,
-            reverse: false,
-            inode: false,
-            sort: None,
-            paths: vec![".".to_string()],
-        };
-        assert!(!args.one_per_line);
-        assert!(!args.long);
-        assert!(!args.directories);
-        assert!(!args.all);
-        assert!(!args.human_readable);
-        assert!(!args.classify);
-        assert!(!args.recursive);
-        assert!(!args.sort_size);
-        assert!(!args.sort_time);
-        assert!(!args.sort_access);
-        assert!(!args.reverse);
-        assert!(!args.inode);
-        assert_eq!(args.paths, vec!["."]);
+    fn parse(args: &[&str]) -> Args {
+        Args::try_parse_from(std::iter::once("eka").chain(args.iter().copied())).unwrap()
     }
 
     #[test]
-    fn test_sort_field_from_str() {
-        assert_eq!(SortField::from_str("name"), Some(SortField::Name));
-        assert_eq!(SortField::from_str("size"), Some(SortField::Size));
-        assert_eq!(SortField::from_str("time"), Some(SortField::Time));
-        assert_eq!(SortField::from_str("extension"), Some(SortField::Extension));
-        assert_eq!(SortField::from_str("invalid"), None);
+    fn test_default_sort_is_name() {
+        assert_eq!(parse(&[]).sort_field(), SortField::Name);
+        assert_eq!(parse(&[]).paths, vec!["."]);
     }
 
     #[test]
-    fn test_get_sort_field_size() {
-        let args = Args {
-            sort_size: true,
-            ..Default::default()
-        };
-        assert_eq!(args.get_sort_field(), SortField::Size);
+    fn test_size_and_time_sort() {
+        assert_eq!(parse(&["-S"]).sort_field(), SortField::Size);
+        assert_eq!(parse(&["-t"]).sort_field(), SortField::Time);
     }
 
     #[test]
-    fn test_get_sort_field_time() {
-        let args = Args {
-            sort_time: true,
-            ..Default::default()
-        };
-        assert_eq!(args.get_sort_field(), SortField::Time);
+    fn test_sort_word_overrides_flags() {
+        assert_eq!(parse(&["-S", "--sort=extension"]).sort_field(), SortField::Extension);
+        assert_eq!(parse(&["--sort=none"]).sort_field(), SortField::None);
     }
 
     #[test]
-    fn test_get_sort_field_from_option() {
-        let args = Args {
-            sort: Some("extension".to_string()),
-            ..Default::default()
-        };
-        assert_eq!(args.get_sort_field(), SortField::Extension);
+    fn test_access_time_semantics() {
+        // -u alone sorts by atime; with -l it only changes the displayed time
+        assert_eq!(parse(&["-u"]).sort_field(), SortField::Time);
+        assert_eq!(parse(&["-u"]).time_field(), TimeField::Accessed);
+        assert_eq!(parse(&["-lu"]).sort_field(), SortField::Name);
+        assert_eq!(parse(&["-lut"]).sort_field(), SortField::Time);
+        assert_eq!(parse(&["-c"]).time_field(), TimeField::Changed);
     }
-}
 
-// Implement Default for Args for testing
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            one_per_line: false,
-            long: false,
-            directories: false,
-            all: false,
-            human_readable: false,
-            classify: false,
-            recursive: false,
-            sort_size: false,
-            sort_time: false,
-            sort_access: false,
-            reverse: false,
-            inode: false,
-            sort: None,
-            paths: vec![".".to_string()],
-        }
+    #[test]
+    fn test_h_is_human_readable_not_help() {
+        let a = parse(&["-lh"]);
+        assert!(a.long && a.human_readable);
+    }
+
+    #[test]
+    fn test_almost_all_vs_all() {
+        let a = parse(&["-A"]);
+        assert!(a.show_hidden() && !a.all);
+        assert!(parse(&["-a"]).all);
+    }
+
+    #[test]
+    fn test_dereference_flags() {
+        assert!(!parse(&[]).dereference_cmdline());
+        assert!(parse(&["-H"]).dereference_cmdline() && !parse(&["-H"]).dereference());
+        assert!(parse(&["-L"]).dereference() && parse(&["-L"]).dereference_cmdline());
+        assert!(!parse(&["-LP"]).dereference());
+    }
+
+    #[test]
+    fn test_color_flag_forms() {
+        assert_eq!(parse(&["--color"]).color, Some(ColorWhen::Always));
+        assert_eq!(parse(&["--color=never"]).color, Some(ColorWhen::Never));
+        assert_eq!(parse(&["--color=auto"]).color, Some(ColorWhen::Auto));
+        assert_eq!(parse(&[]).color, None);
+    }
+
+    #[test]
+    fn test_gnu_long_options() {
+        let a = parse(&["--all", "--reverse", "--recursive", "--directory", "--inode"]);
+        assert!(a.all && a.reverse && a.recursive && a.directories && a.inode);
     }
 }

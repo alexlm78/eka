@@ -1,4 +1,6 @@
-use crate::types::FileType;
+use crate::types::{FileEntry, FileType};
+use std::io::{self, Write};
+use std::os::unix::ffi::OsStrExt;
 
 /// ANSI color codes for different file types
 pub struct Colors;
@@ -10,6 +12,10 @@ impl Colors {
             FileType::Directory => "\x1b[36m",    // Cyan
             FileType::Executable => "\x1b[32m",   // Bright green
             FileType::Symlink => "\x1b[33m",      // Yellow
+            FileType::BrokenSymlink => "\x1b[31;1m", // Bold red
+            FileType::Fifo => "\x1b[33m",         // Yellow
+            FileType::Socket => "\x1b[35m",       // Magenta
+            FileType::CharDevice | FileType::BlockDevice => "\x1b[33;1m", // Bold yellow
             FileType::Image => "\x1b[35m",        // Magenta
             FileType::Video => "\x1b[31m",        // Red
             FileType::Audio => "\x1b[38;5;208m", // Orange
@@ -28,52 +34,30 @@ impl Colors {
         "\x1b[0m"
     }
 
-    /// Prints text with the appropriate color based on file type
-    pub fn print_with_color(text: &str, file_type: FileType, is_hidden: bool) {
-        let color = if is_hidden {
+    /// Writes the filename (raw bytes), colored, with optional classification indicator
+    pub fn write_filename(out: &mut impl Write, entry: &FileEntry, classify: bool) -> io::Result<()> {
+        let color = if entry.is_hidden && !entry.is_symlink {
             Self::get_hidden_color()
         } else {
-            Self::get_color(file_type)
+            Self::get_color(entry.file_type)
         };
-        print!("{}{}{}", color, text, Self::reset());
-    }
+        out.write_all(color.as_bytes())?;
+        out.write_all(entry.name.as_bytes())?;
+        out.write_all(Self::reset().as_bytes())?;
 
-    /// Prints a complete line with colors
-    #[allow(dead_code)]
-    pub fn print_colored_line(text: &str, file_type: FileType, is_hidden: bool) {
-        Self::print_with_color(text, file_type, is_hidden);
-        println!();
-    }
-
-    /// Prints the filename with its characteristic color
-    #[allow(dead_code)]
-    pub fn print_filename(entry: &crate::types::FileEntry) {
-        Self::print_filename_with_indicator(entry, false);
-    }
-
-    /// Prints the filename with its characteristic color and optional classification indicator
-    pub fn print_filename_with_indicator(entry: &crate::types::FileEntry, classify: bool) {
-        // For symlinks, display the target in a different color
-        if entry.is_symlink {
-            let color = Self::get_color(entry.file_type);
-            if let Some(ref target) = entry.symlink_target {
-                print!("{}{} ", color, entry.name);
-                print!("\x1b[90m→ {}{}", target, Self::reset());
-            } else {
-                print!("{}{}{}", color, entry.name, Self::reset());
-            }
-        } else {
-            Self::print_with_color(&entry.name, entry.file_type, entry.is_hidden);
+        if let Some(ref target) = entry.symlink_target {
+            out.write_all(b" \x1b[90m-> ")?;
+            out.write_all(target.as_bytes())?;
+            out.write_all(Self::reset().as_bytes())?;
         }
-        
-        // Add classification indicator if requested
+
         if classify {
             let indicator = entry.file_type.indicator();
             if !indicator.is_empty() {
-                let color = Self::get_color(entry.file_type);
-                print!("{}{}{}", color, indicator, Self::reset());
+                write!(out, "{}{}{}", Self::get_color(entry.file_type), indicator, Self::reset())?;
             }
         }
+        Ok(())
     }
 }
 
@@ -82,32 +66,18 @@ pub struct ColoredOutput;
 
 impl ColoredOutput {
     /// Prints permissions with colors (directories in cyan)
-    pub fn print_permissions(permissions: &str, is_dir: bool) {
+    pub fn write_permissions(out: &mut impl Write, permissions: &str, is_dir: bool) -> io::Result<()> {
         if is_dir {
-            print!("\x1b[36m{}\x1b[0m", permissions);
+            write!(out, "\x1b[36m{}\x1b[0m", permissions)
         } else {
-            print!("{}", permissions);
-        }
-    }
-
-    /// Prints size with color coding (small in green, large in yellow)
-    #[allow(dead_code)]
-    pub fn print_size(size: u64) {
-        if size < 1024 {
-            print!("\x1b[32m{:>4}\x1b[0m ", size);
-        } else if size < 1024 * 1024 {
-            print!("\x1b[33m{:>3}K\x1b[0m ", size / 1024);
-        } else if size < 1024 * 1024 * 1024 {
-            print!("\x1b[33m{:>3}M\x1b[0m ", size / (1024 * 1024));
-        } else {
-            print!("\x1b[33m{:>3}G\x1b[0m ", size / (1024 * 1024 * 1024));
+            write!(out, "{}", permissions)
         }
     }
 
     /// Prints size in human-readable format
-    pub fn print_human_size(size: u64) {
+    pub fn write_human_size(out: &mut impl Write, size: u64) -> io::Result<()> {
         let (value, unit) = Self::human_readable_size(size);
-        print!("{:>5}{}", value, unit);
+        write!(out, "{:>5}{}", value, unit)
     }
 
     fn human_readable_size(size: u64) -> (String, String) {

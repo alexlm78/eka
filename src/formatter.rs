@@ -1,131 +1,59 @@
 use crate::cli::Args;
-use crate::colors::{Colors, ColoredOutput};
-use crate::types::{FileEntry, FileType};
+use crate::colors::{ColoredOutput, Colors};
+use crate::types::FileEntry;
 use chrono::{DateTime, Local};
+use std::io::{self, Write};
 
 /// Output formatter for eka
 pub struct Formatter;
 
 impl Formatter {
     /// Prints entries in short format (one per line)
-    pub fn format_short(entries: &[FileEntry], args: &Args) {
+    pub fn format_short(out: &mut impl Write, entries: &[FileEntry], args: &Args) -> io::Result<()> {
         for entry in entries {
-            // Print inode if requested
             if args.inode {
-                if let Some(inode) = entry.inode {
-                    print!("{:>12} ", inode);
-                } else {
-                    print!("{:>12} ", 0);
-                }
+                write!(out, "{:>12} ", entry.inode)?;
             }
-            
-            // Print filename with color and classification
-            Colors::print_filename_with_indicator(entry, args.classify);
-            println!();
+            Colors::write_filename(out, entry, args.classify)?;
+            out.write_all(b"\n")?;
         }
+        Ok(())
     }
 
     /// Prints entries in long format (with columns)
-    pub fn format_long(entries: &[FileEntry], args: &Args) {
-        // Column headers - adjust based on flags
-        let mut format_str = String::new();
-        
-        if args.inode {
-            format_str.push_str("{:>12} ");
-        }
-        
-        format_str.push_str("{:<18} {:>4} {:<8} {:<8} ");
-        
-        if args.human_readable {
-            format_str.push_str("{:>6} ");
-        } else {
-            format_str.push_str("{:>10} ");
-        }
-        
-        format_str.push_str("{:>20} {}");
-        
-        let header = if args.inode {
-            if args.human_readable {
-                "Permissions    Links User     Group   Size Date                Name"
-            } else {
-                "Permissions    Links User     Group     Size Date                Name"
-            }
-        } else {
-            if args.human_readable {
-                "Permissions    Links User     Group   Size Date                Name"
-            } else {
-                "Permissions    Links User     Group     Size Date                Name"
-            }
-        };
-        
-        println!("{}", header);
-
+    pub fn format_long(out: &mut impl Write, entries: &[FileEntry], args: &Args) -> io::Result<()> {
+        let size_col = if args.human_readable { "  Size" } else { "      Size" };
+        writeln!(out, "Permissions    Links User     Group {} Date                Name", size_col)?;
         for entry in entries {
-            Self::print_long_entry(entry, args);
+            Self::write_long_entry(out, entry, args)?;
         }
+        Ok(())
     }
 
     /// Prints a single entry in long format
-    fn print_long_entry(entry: &FileEntry, args: &Args) {
-        let is_dir = entry.file_type == FileType::Directory;
-
-        // Print inode if requested
+    fn write_long_entry(out: &mut impl Write, entry: &FileEntry, args: &Args) -> io::Result<()> {
         if args.inode {
-            if let Some(inode) = entry.inode {
-                print!("{:>12} ", inode);
-            } else {
-                print!("{:>12} ", 0);
-            }
+            write!(out, "{:>12} ", entry.inode)?;
         }
 
-        // Colored permissions
-        ColoredOutput::print_permissions(&entry.permissions, is_dir);
-        print!("  ");
+        ColoredOutput::write_permissions(out, &entry.permissions, entry.file_type.is_dir())?;
+        write!(out, "  {:>4} ", entry.nlink)?;
 
-        // Number of hard links
-        print!("{:>4} ", entry.nlink);
+        // User and group (simplified; real name resolution is Phase 2)
+        write!(out, "{:<8} {:<8} ", "user", "staff")?;
 
-        // User and group (simplified)
-        print!("{:<8} ", "user");
-        print!("{:<8} ", "staff");
-
-        // Size
         if args.human_readable {
-            ColoredOutput::print_human_size(entry.size);
-            print!(" ");
+            ColoredOutput::write_human_size(out, entry.size)?;
+            out.write_all(b" ")?;
         } else {
-            print!("{:>10} ", entry.size);
+            write!(out, "{:>10} ", entry.size)?;
         }
 
-        // Modification date
         let datetime: DateTime<Local> = entry.modified.into();
-        let formatted = datetime.format("%b %d %H:%M").to_string();
-        print!("{:>20} ", formatted);
+        write!(out, "{:>20} ", datetime.format("%b %d %H:%M"))?;
 
-        // Colored name with classification indicator
-        Colors::print_filename_with_indicator(entry, args.classify);
-
-        println!();
-    }
-
-    /// Prints the directory header
-    pub fn print_header(path: &str, total_entries: usize) {
-        if total_entries > 0 {
-            println!("{}:", path);
-            println!("total {}", total_entries);
-        }
-    }
-
-    /// Prints a complete directory entry for recursive listing
-    #[allow(dead_code)]
-    pub fn print_directory(path: &str, entries: &[FileEntry], args: &Args) {
-        if args.long {
-            Self::print_header(path, entries.len());
-            Self::format_long(entries, args);
-        } else {
-            Self::print_header(path, entries.len());
-            Self::format_short(entries, args);
-        }
+        Colors::write_filename(out, entry, args.classify)?;
+        out.write_all(b"\n")
     }
 }
 
@@ -133,58 +61,60 @@ impl Formatter {
 mod tests {
     use super::*;
     use crate::types::FileType;
+    use std::os::unix::ffi::OsStrExt;
     use std::path::PathBuf;
     use std::time::SystemTime;
 
-    fn create_test_entry(name: &str) -> FileEntry {
+    fn entry(name: &[u8]) -> FileEntry {
         FileEntry {
-            name: name.to_string(),
-            path: PathBuf::from(name),
+            name: std::ffi::OsStr::from_bytes(name).to_os_string(),
+            path: PathBuf::from("x"),
             file_type: FileType::Regular,
             size: 1024,
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,
             changed: SystemTime::UNIX_EPOCH,
-            is_hidden: name.starts_with('.'),
+            is_hidden: name.starts_with(b"."),
             is_symlink: false,
             symlink_target: None,
-            inode: Some(12345),
+            inode: 12345,
             nlink: 1,
+            uid: 0,
+            gid: 0,
+            blocks: 8,
         }
     }
 
     #[test]
-    fn test_formatter_creation() {
-        // Basic test to ensure formatter can be created
-        assert!(true);
+    fn test_short_writes_one_line_per_entry() {
+        let mut buf = Vec::new();
+        Formatter::format_short(&mut buf, &[entry(b"a"), entry(b"b")], &Args::default()).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert_eq!(s.lines().count(), 2);
+        assert!(s.contains('a') && s.contains('b'));
     }
 
     #[test]
-    fn test_format_short() {
-        let entries = vec![
-            create_test_entry("file1.txt"),
-            create_test_entry("file2.txt"),
-        ];
-        let args = Args::default();
-        
-        // This should not panic
-        Formatter::format_short(&entries, &args);
+    fn test_short_inode() {
+        let mut buf = Vec::new();
+        let args = Args { inode: true, ..Default::default() };
+        Formatter::format_short(&mut buf, &[entry(b"a")], &args).unwrap();
+        assert!(String::from_utf8(buf).unwrap().contains("12345"));
     }
 
     #[test]
-    fn test_format_long() {
-        let entries = vec![
-            create_test_entry("file1.txt"),
-        ];
-        let args = Args::default();
-        
-        // This should not panic
-        Formatter::format_long(&entries, &args);
+    fn test_non_utf8_bytes_written_raw() {
+        let mut buf = Vec::new();
+        Formatter::format_short(&mut buf, &[entry(b"bad\xff")], &Args::default()).unwrap();
+        assert!(buf.windows(4).any(|w| w == b"bad\xff"));
     }
 
     #[test]
-    fn test_print_header() {
-        Formatter::print_header("/test/path", 5);
+    fn test_long_has_permissions_and_size() {
+        let mut buf = Vec::new();
+        Formatter::format_long(&mut buf, &[entry(b"f")], &Args::default()).unwrap();
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("-rw-r--r--") && s.contains("1024"));
     }
 }

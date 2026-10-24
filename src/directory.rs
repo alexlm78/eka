@@ -1,7 +1,9 @@
 use crate::cli::{Args, SortField};
 use crate::types::FileEntry;
+use std::ffi::OsString;
 use std::fs;
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
 
 /// Recursive directory entry with path information
 #[derive(Debug, Clone)]
@@ -10,97 +12,95 @@ pub struct DirectoryEntry {
     pub entries: Vec<FileEntry>,
 }
 
-/// Reads a directory and returns filtered entries based on CLI arguments
-pub fn read_directory(path: &str, args: &Args) -> Result<Vec<FileEntry>, String> {
-    let path = Path::new(path);
+/// Strips the " (os error N)" suffix so messages read like ls
+pub fn io_message(e: &io::Error) -> String {
+    let s = e.to_string();
+    match s.find(" (os error") {
+        Some(i) => s[..i].to_string(),
+        None => s,
+    }
+}
 
-    // Verify path exists
-    if !path.exists() {
-        return Err(format!("No such directory: {}", path.display()));
+/// Reads a directory and returns filtered, sorted entries.
+/// Per-entry failures are reported on stderr and set `had_error`.
+pub fn read_directory(path: &Path, args: &Args, had_error: &mut bool) -> io::Result<Vec<FileEntry>> {
+    let mut file_entries: Vec<FileEntry> = Vec::new();
+
+    if args.all {
+        for dot in [".", ".."] {
+            match FileEntry::with_name(path.join(dot), OsString::from(dot)) {
+                Ok(e) => file_entries.push(e),
+                Err(e) => {
+                    eprintln!("eka: cannot access '{}/{}': {}", path.display(), dot, io_message(&e));
+                    *had_error = true;
+                }
+            }
+        }
     }
 
-    // Verify it's actually a directory
-    if !path.is_dir() {
-        return Err(format!("Not a directory: {}", path.display()));
+    for entry in fs::read_dir(path)? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("eka: reading '{}': {}", path.display(), io_message(&e));
+                *had_error = true;
+                continue;
+            }
+        };
+        match FileEntry::with_name(entry.path(), entry.file_name()) {
+            Ok(fe) if args.all || !fe.is_hidden => file_entries.push(fe),
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("eka: cannot access '{}': {}", entry.path().display(), io_message(&e));
+                *had_error = true;
+            }
+        }
     }
 
-    // Read directory entries
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(e) => return Err(format!("Error reading {}: {}", path.display(), e)),
-    };
-
-    // Convert to FileEntry and apply filters
-    let mut file_entries: Vec<FileEntry> = entries
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            FileEntry::from_path(entry.path())
-        })
-        .filter(|entry| {
-            // Apply filter arguments
-            if args.directories && entry.file_type != crate::types::FileType::Directory {
-                return false;
-            }
-            if !args.all && entry.is_hidden {
-                return false;
-            }
-            true
-        })
-        .collect();
-
-    // Sort entries based on CLI arguments
-    sort_entries(&mut file_entries, &args);
-
+    sort_entries(&mut file_entries, args);
     Ok(file_entries)
 }
 
-/// Reads directory recursively and returns all entries
-pub fn read_directory_recursive(path: &str, args: &Args) -> Result<Vec<DirectoryEntry>, String> {
-    let mut result: Vec<DirectoryEntry> = Vec::new();
-    
-    // Read the initial directory
-    let entries = read_directory(path, args)?;
+/// Reads a directory and all subdirectories (symlinks are not followed, so no cycles)
+pub fn read_directory_recursive(
+    path: &Path,
+    args: &Args,
+    had_error: &mut bool,
+) -> io::Result<Vec<DirectoryEntry>> {
+    let mut result = Vec::new();
+    let entries = read_directory(path, args, had_error)?;
+    let subdirs: Vec<PathBuf> = entries
+        .iter()
+        .filter(|e| e.file_type.is_dir() && e.name != "." && e.name != "..")
+        .map(|e| e.path.clone())
+        .collect();
     result.push(DirectoryEntry {
-        path: path.to_string(),
+        path: path.display().to_string(),
         entries,
     });
 
-    // Recursively process subdirectories
-    if args.recursive {
-        // Collect subdirectory paths first to avoid borrow issues
-        let mut subdirs: Vec<String> = Vec::new();
-        
-        for entry in &result[0].entries {
-            if entry.file_type == crate::types::FileType::Directory 
-                && !entry.is_hidden 
-                && entry.name != "." 
-                && entry.name != ".." 
-            {
-                subdirs.push(format!("{}/{}", path, entry.name));
-            }
-        }
-        
-        // Process subdirectories
-        for subdir in subdirs {
-            if let Ok(subdir_entries) = read_directory_recursive(&subdir, args) {
-                result.extend(subdir_entries);
+    for sub in subdirs {
+        match read_directory_recursive(&sub, args, had_error) {
+            Ok(v) => result.extend(v),
+            Err(e) => {
+                eprintln!("eka: cannot open directory '{}': {}", sub.display(), io_message(&e));
+                *had_error = true;
             }
         }
     }
-
     Ok(result)
 }
 
 /// Sorts entries based on CLI arguments
-fn sort_entries(entries: &mut Vec<FileEntry>, args: &Args) {
+pub fn sort_entries(entries: &mut [FileEntry], args: &Args) {
     let sort_field = args.get_sort_field();
     let reverse = args.reverse;
     
     entries.sort_by(|a, b| {
         // First compare by type (directories first), but only for name sorting
         if sort_field == SortField::Name {
-            let a_is_dir = a.file_type == crate::types::FileType::Directory;
-            let b_is_dir = b.file_type == crate::types::FileType::Directory;
+            let a_is_dir = a.file_type.is_dir();
+            let b_is_dir = b.file_type.is_dir();
             
             if a_is_dir != b_is_dir {
                 let cmp = b_is_dir.cmp(&a_is_dir);
@@ -111,7 +111,7 @@ fn sort_entries(entries: &mut Vec<FileEntry>, args: &Args) {
         // Sort by the selected field
         let cmp = match sort_field {
             SortField::Name => {
-                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+                a.display_name().to_lowercase().cmp(&b.display_name().to_lowercase())
             }
             SortField::Size => {
                 // Larger files first (descending)
@@ -143,15 +143,6 @@ fn sort_entries(entries: &mut Vec<FileEntry>, args: &Args) {
     });
 }
 
-/// Extracts the base name of the path for display purposes
-#[allow(dead_code)]
-pub fn get_dir_name(path: &str) -> String {
-    let path = Path::new(path);
-    path.file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string_lossy().to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,7 +152,7 @@ mod tests {
 
     fn create_test_entry(name: &str, file_type: FileType, size: u64) -> FileEntry {
         FileEntry {
-            name: name.to_string(),
+            name: name.into(),
             path: PathBuf::from(name),
             file_type,
             size,
@@ -172,15 +163,12 @@ mod tests {
             is_hidden: name.starts_with('.'),
             is_symlink: false,
             symlink_target: None,
-            inode: None,
+            inode: 0,
             nlink: 1,
+            uid: 0,
+            gid: 0,
+            blocks: 0,
         }
-    }
-
-    #[test]
-    fn test_get_dir_name() {
-        assert_eq!(get_dir_name("/home/user/documents"), "documents");
-        assert_eq!(get_dir_name("."), ".");
     }
 
     #[test]
