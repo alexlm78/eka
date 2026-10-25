@@ -6,6 +6,8 @@ mod common;
 use common::*;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 /// Visible entries of `standard_tree()` in byte order
 const VISIBLE: [&str; 13] = [
@@ -1188,4 +1190,28 @@ fn si_uses_powers_of_1000() {
     let f = standard_tree();
     let out = text(&eka(&f, &["-l", "--si", "big.bin"]).stdout);
     assert!(out.contains("k ") || out.contains("M "), "{out}");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn extended_attributes_add_a_marker_after_the_mode() {
+    let f = standard_tree();
+    let set = Command::new("xattr")
+        .args(["-w", "user.test", "1"])
+        .arg(f.path("a.txt"))
+        .output()
+        .unwrap();
+    assert!(set.status.success());
+    // eka_env would strip the marker, so run the binary directly
+    let out = Command::new(EKA)
+        .args(["-l", "a.txt"])
+        .current_dir(f.root())
+        .env("LC_ALL", "C")
+        .output()
+        .unwrap();
+    assert!(
+        text(&out.stdout).starts_with("-rw-r--r--@ 1 "),
+        "{}",
+        text(&out.stdout)
+    );
 }

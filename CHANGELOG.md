@@ -18,6 +18,11 @@ change behavior.
 
 ### Added
 
+- `-l` prints `@` after the mode of a file with extended attributes on macOS,
+  and `+` (POSIX ACL) or `.` (SELinux context) on Linux, as the system `ls`
+  does. The marker column appears only when some file in the listing has a
+  marker. Reading attributes costs one more system call per file in the long
+  format (about 3 ms per 1,000 files). macOS ACLs (`+`) are not reported.
 - `-f`, `--format`, `--file-type`, `--si`, `--indicator-style=none|file-type|classify`
   and `--time=birth` (`creation`).
 

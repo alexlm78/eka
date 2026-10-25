@@ -271,7 +271,7 @@ File names are arbitrary bytes. Printed raw to a terminal, a name can move the c
 .PP
 \fBeka\fR contains no unsafe code. With \fB\-R\fR, a directory that is its own ancestor is reported as "not listing already-listed directory" and skipped.
 .SH NOTES
-Not implemented yet: \fB\-\-author\fR, \fB\-\-si\fR, and the \fBlocale\fR and \fBclocale\fR quoting styles. The shell styles always use single quotes, where GNU \fBls\fR uses double quotes for a name with an apostrophe. Bidirectional overrides are unprintable in every locale. Extended attribute and ACL markers are not printed. \fBeka\fR runs on macOS and Linux.
+Not implemented yet: \fB\-\-author\fR, and the \fBlocale\fR and \fBclocale\fR quoting styles. The shell styles always use single quotes, where GNU \fBls\fR uses double quotes for a name with an apostrophe. Bidirectional overrides are unprintable in every locale. In the long format \fBeka\fR prints \fB@\fR after the mode of a file with extended attributes on macOS, and \fB+\fR (ACL) or \fB.\fR (SELinux context) on Linux. The \fB+\fR of macOS ACLs is not printed. \fBeka\fR runs on macOS and Linux.
 .SH AUTHOR
 Alejandro Lopez Monzon.
 .SH BUGS

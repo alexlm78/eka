@@ -177,13 +177,37 @@ pub fn eka(f: &Fixture, args: &[&str]) -> Output {
     eka_env(f, args, &[])
 }
 
+/// macOS tags files with attributes such as com.apple.provenance, which cannot
+/// be removed, so `ls -l` prints `@` after the mode. Expected listings are
+/// written without the marker; this takes it out. Tests of the marker itself
+/// run the binary directly.
+pub fn strip_attribute_marker(bytes: Vec<u8>) -> Vec<u8> {
+    let is_mode = |m: &[u8]| {
+        m.len() == 10
+            && b"-dlcbps".contains(&m[0])
+            && m[1..].iter().all(|b| b"rwxsStT-".contains(b))
+    };
+    let mut out = Vec::with_capacity(bytes.len());
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'@' && i >= 10 && is_mode(&bytes[i - 10..i]) {
+            continue;
+        }
+        out.push(b);
+    }
+    out
+}
+
 pub fn eka_env(f: &Fixture, args: &[&str], env: &[(&str, &str)]) -> Output {
     let mut cmd = clean_command(EKA, f.root());
     cmd.args(args);
     for (k, v) in env {
         cmd.env(k, v);
     }
-    cmd.output().unwrap()
+    let mut output = cmd.output().unwrap();
+    if cfg!(target_os = "macos") {
+        output.stdout = strip_attribute_marker(output.stdout);
+    }
+    output
 }
 
 /// The ls to compare against: `$EKA_TEST_LS`, or `/bin/ls`

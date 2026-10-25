@@ -213,7 +213,8 @@ fn assert_long_same(f: &Fixture, cases: &[&[&str]]) {
         let inode = args
             .iter()
             .any(|a| a.starts_with('-') && !a.starts_with("--") && a.contains('i'));
-        let same = if gnu {
+        // gls does not print the macOS extended-attribute marker
+        let same = if gnu && !cfg!(target_os = "macos") {
             mine.stdout == theirs.stdout
         } else {
             normalize(&text(&mine.stdout), inode) == normalize(&text(&theirs.stdout), inode)

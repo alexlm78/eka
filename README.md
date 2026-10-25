@@ -190,13 +190,13 @@ Eka is faster than the others on large flat listings and ties GNU ls on recursio
 - **Column fit:** eka lets the columns fill the width exactly (`total <= width`), as recent coreutils do. Older ones, such as Ubuntu's 9.4, need `total < width`, so at exact-fit widths they use one column fewer.
 - **Sort order:** in the `C` locale names compare bytewise, like GNU `ls`. In other locales eka approximates the GNU order: case and accents are ignored first, then accents and case (lowercase first) break ties. It matches GNU `ls` on Latin-script names, ASCII punctuation, digits and accented Latin-1 letters (checked against 300 random names). Other scripts and language-specific rules (such as Spanish `ch` or German `ß`) sort by code point.
 
-- Not implemented yet: `--author`, `--si`, `-D`, `-Z`.
+- Not implemented yet: `--author`, `-D`, `-Z`.
 - Shell quoting always uses single quotes (`'it'\\''s'`), where GNU uses double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.
 - With `--quoting-style=shell`, a name whose only special character is a control character is quoted by eka and left bare by GNU.
 - Bidirectional overrides (such as U+202E) are always treated as unprintable. GNU decides by locale, and in a UTF-8 locale it prints them as they are.
 - Column widths count code points, so wide (CJK) characters are not measured correctly.
 - `total` counts 1 KiB blocks, as GNU does; the BSD/macOS `ls` counts 512-byte blocks.
-- Extended attribute and ACL markers (`@`, `+`) are not printed.
+- **Attribute markers:** on macOS `-l` prints `@` after the mode of a file with extended attributes, like the system `ls`; the `+` for an ACL is not printed, because reading ACLs needs unsafe code. On Linux it prints `+` (POSIX ACL) and `.` (SELinux context), like GNU `ls`. The marker column is added only when some file in the listing has a marker, and the other files are padded.
 
 ## Project Structure
 

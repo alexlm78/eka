@@ -218,14 +218,31 @@ impl<'a> Formatter<'a> {
         let inode_w = self.inode_width(entries);
         self.set_alignment(entries, true);
 
-        for (entry, row) in entries.iter().zip(&rows) {
+        // The marker column exists only when some entry has a marker, so a
+        // listing without extended attributes or ACLs is unchanged
+        let markers: Vec<&str> = entries
+            .iter()
+            .map(|e| crate::attrs::marker(&e.path))
+            .collect();
+        let marker_column = markers.iter().any(|m| !m.is_empty());
+
+        for ((entry, row), marker) in entries.iter().zip(&rows).zip(&markers) {
             if self.args.inode {
                 write!(out, "{:>inode_w$} ", entry.inode)?;
             }
             if self.args.size {
                 write!(out, "{:>block_w$} ", self.allocated_size(entry))?;
             }
-            write!(out, "{} {:>nlink_w$}", entry.permissions, row.nlink)?;
+            let marker = if marker_column && marker.is_empty() {
+                " "
+            } else {
+                marker
+            };
+            write!(
+                out,
+                "{}{} {:>nlink_w$}",
+                entry.permissions, marker, row.nlink
+            )?;
             if !self.args.no_owner {
                 write_padded(out, &row.owner, owner_w)?;
             }

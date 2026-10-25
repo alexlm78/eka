@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod attrs;
 mod cli;
 mod collate;
 mod colors;
