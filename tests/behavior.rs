@@ -481,8 +481,9 @@ fn block_size_scales_the_size_column() {
         total.trim_end_matches(|c: char| c.is_ascii_digit()) == "total ",
         "{total}"
     );
-    // -h overrides --block-size
-    assert_eq!(sizes(&["-h", "--block-size=100"]), ["500", "50", "50", "5"]);
+    // The last of -h and --block-size wins
+    assert_eq!(sizes(&["-h", "--block-size=100"]), ["5", "1", "1", "1"]);
+    assert_eq!(sizes(&["--block-size=100", "-h"]), ["500", "50", "50", "5"]);
 }
 
 #[test]

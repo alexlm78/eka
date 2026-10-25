@@ -1,6 +1,7 @@
 use crate::quoting::QuotingStyle;
 use chrono::format::{Item, StrftimeItems};
-use clap::{ArgAction, Parser, ValueEnum, ValueHint};
+use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum, ValueHint};
+use std::ffi::OsString;
 use std::str::FromStr;
 
 /// Parses an enum value, accepting any unambiguous prefix as GNU ls does
@@ -218,15 +219,30 @@ pub enum Layout {
     Long,
 }
 
+/// Output layout picked by the last of -1 -C -x -m -l (and the options that
+/// imply -l) on the command line
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutChoice {
+    Single,
+    Columns,
+    Across,
+    Commas,
+    Long,
+}
+
 /// Command-line arguments structure for eka
 #[derive(Parser, Debug, Default)]
 #[command(name = "eka", version, about = "A modern replacement for ls", long_about = None)]
-#[command(infer_long_args = true)]
+#[command(infer_long_args = true, args_override_self = true)]
 #[command(disable_help_flag = true)]
 pub struct Args {
     /// Print help
     #[arg(long, action = ArgAction::Help)]
     pub help: Option<bool>,
+
+    /// Layout chosen by the last format option, set by `resolve`
+    #[arg(skip)]
+    pub layout_choice: Option<LayoutChoice>,
 
     /// Do not sort, and list all entries (same as -aU)
     #[arg(short = 'f')]
@@ -454,8 +470,164 @@ pub struct Args {
 }
 
 impl Args {
+    /// Parses the command line (or exits with the usage error). Options that
+    /// compete for the same setting are resolved so that the last one wins,
+    /// as in GNU ls.
+    pub fn parse_resolved() -> Self {
+        Self::from_args(std::env::args_os()).unwrap_or_else(|e| e.exit())
+    }
+
+    pub fn from_args<I, T>(args: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let matches = Self::command().try_get_matches_from(args)?;
+        let mut parsed = Self::from_arg_matches(&matches)?;
+        parsed.resolve(&matches);
+        Ok(parsed)
+    }
+
+    /// Settles each group of competing options on the one given last
+    fn resolve(&mut self, m: &ArgMatches) {
+        // Position of the last occurrence of the option, if it was given
+        let at = |id: &str| {
+            // Flags that were not given still have an implicit default value
+            if m.value_source(id) == Some(clap::parser::ValueSource::CommandLine) {
+                m.indices_of(id).and_then(|i| i.max())
+            } else {
+                None
+            }
+        };
+        let last = |ids: &[&'static str]| -> Option<&'static str> {
+            ids.iter()
+                .filter_map(|id| at(id).map(|i| (i, *id)))
+                .max()
+                .map(|(_, id)| id)
+        };
+
+        // -1 has no effect after a long format option, as in GNU ls
+        let mut occurrences: Vec<(usize, &str)> = [
+            "one_per_line",
+            "columns",
+            "across",
+            "commas",
+            "long",
+            "numeric_uid_gid",
+            "no_owner",
+            "no_group_short",
+            "full_time",
+            "format",
+        ]
+        .into_iter()
+        .filter(|id| m.value_source(id) == Some(clap::parser::ValueSource::CommandLine))
+        .flat_map(|id| m.indices_of(id).into_iter().flatten().map(move |i| (i, id)))
+        .collect();
+        occurrences.sort();
+        for (_, id) in occurrences {
+            let choice = match id {
+                "one_per_line" => LayoutChoice::Single,
+                "columns" => LayoutChoice::Columns,
+                "across" => LayoutChoice::Across,
+                "commas" => LayoutChoice::Commas,
+                "format" => match self.format {
+                    Some(FormatWord::Across | FormatWord::Horizontal) => LayoutChoice::Across,
+                    Some(FormatWord::Commas) => LayoutChoice::Commas,
+                    Some(FormatWord::SingleColumn) => LayoutChoice::Single,
+                    Some(FormatWord::Vertical) => LayoutChoice::Columns,
+                    _ => LayoutChoice::Long,
+                },
+                _ => LayoutChoice::Long,
+            };
+            if choice == LayoutChoice::Single && self.layout_choice == Some(LayoutChoice::Long) {
+                continue;
+            }
+            self.layout_choice = Some(choice);
+        }
+
+        if let Some(id) = last(&["classify", "indicator_style", "file_type"]) {
+            self.indicator_style = match id {
+                "classify" => Some(IndicatorStyle::Classify),
+                "file_type" => Some(IndicatorStyle::FileType),
+                _ => self.indicator_style,
+            };
+        }
+
+        if let Some(id) = last(&[
+            "sort",
+            "sort_none",
+            "no_sort_all",
+            "sort_size",
+            "sort_time",
+            "sort_version",
+            "sort_extension",
+        ]) {
+            self.sort = match id {
+                "sort_none" | "no_sort_all" => Some(SortField::None),
+                "sort_size" => Some(SortField::Size),
+                "sort_time" => Some(SortField::Time),
+                "sort_version" => Some(SortField::Version),
+                "sort_extension" => Some(SortField::Extension),
+                _ => self.sort,
+            };
+        }
+
+        if let Some(id) = last(&["sort_access", "sort_change", "time"]) {
+            self.time = match id {
+                "sort_access" => Some(TimeField::Accessed),
+                "sort_change" => Some(TimeField::Changed),
+                _ => self.time,
+            };
+        }
+
+        if let Some(id) = last(&["quote_name", "escape", "literal", "quoting_style"]) {
+            self.quoting_style = match id {
+                "quote_name" => Some(QuotingStyle::C),
+                "escape" => Some(QuotingStyle::Escape),
+                "literal" => Some(QuotingStyle::Literal),
+                _ => self.quoting_style,
+            };
+        }
+
+        if let Some(id) = last(&["hide_control_chars", "show_control_chars"]) {
+            self.show_control_chars = id == "show_control_chars";
+            self.hide_control_chars = !self.show_control_chars;
+        }
+
+        if let Some(id) = last(&["deref_cmdline", "deref_all", "no_deref"]) {
+            self.deref_cmdline = id == "deref_cmdline";
+            self.deref_all = id == "deref_all";
+            self.no_deref = id == "no_deref";
+        }
+
+        // -f is -a plus an unsorted listing (handled above)
+        if let Some(id) = last(&["all", "almost_all", "no_sort_all"]) {
+            self.all = id != "almost_all";
+            self.almost_all = id == "almost_all";
+            self.no_sort_all = false;
+        } else {
+            self.no_sort_all = false;
+        }
+
+        // -h, --si and --block-size decide whether sizes are scaled to K, M, G;
+        // -k and --block-size decide the block size. -k does not undo -h.
+        let human = last(&["human_readable", "si", "block_size"]);
+        let blocks = last(&["kibibytes", "block_size"]);
+        if human.is_some() || blocks.is_some() {
+            self.human_readable = human == Some("human_readable");
+            self.si = human == Some("si");
+            self.kibibytes = blocks == Some("kibibytes");
+            if self.human() || blocks == Some("kibibytes") {
+                self.block_size = None;
+            }
+        }
+    }
+
     /// Whether any option requires the long listing format.
     pub fn is_long(&self) -> bool {
+        if let Some(choice) = self.layout_choice {
+            return choice == LayoutChoice::Long;
+        }
         self.long
             || self.numeric_uid_gid
             || self.no_owner
@@ -464,7 +636,8 @@ impl Args {
             || matches!(self.format, Some(FormatWord::Long | FormatWord::Verbose))
     }
 
-    /// Sort key precedence: --sort=WORD, -U, -S, -t, -v, -X, then name.
+    /// Sort key: the last of --sort=WORD, -U, -S, -t, -v, -X (see `resolve`);
+    /// without one, time for -u/-c without -l, else name.
     /// With -l, -u/-c only change the displayed time.
     pub fn sort_field(&self) -> SortField {
         if let Some(s) = self.sort {
@@ -473,7 +646,7 @@ impl Args {
             SortField::None
         } else if self.sort_size {
             SortField::Size
-        } else if self.sort_time || ((self.sort_access || self.sort_change) && !self.is_long()) {
+        } else if self.sort_time || (!self.is_long() && self.time_field() != TimeField::Modified) {
             SortField::Time
         } else if self.sort_version {
             SortField::Version
@@ -500,6 +673,14 @@ impl Args {
     /// Output arrangement. Precedence: -l, -m, -x, -C, -1; with none of them,
     /// columns on a terminal and one entry per line otherwise (like ls).
     pub fn layout(&self, stdout_is_tty: bool) -> Layout {
+        match self.layout_choice {
+            Some(LayoutChoice::Long) => return Layout::Long,
+            Some(LayoutChoice::Commas) => return Layout::Commas,
+            Some(LayoutChoice::Across) => return Layout::Across,
+            Some(LayoutChoice::Columns) => return Layout::Columns,
+            Some(LayoutChoice::Single) => return Layout::Single,
+            None => {}
+        }
         if self.is_long() {
             Layout::Long
         } else if self.commas || self.format == Some(FormatWord::Commas) {
@@ -579,11 +760,10 @@ impl Args {
         self.human_readable || self.si
     }
 
-    /// Indicator style. An explicit --indicator-style wins, except that -F
-    /// still takes precedence over -p; then -F, then --file-type.
+    /// Indicator style; `resolve` folds -F, -p, --file-type and
+    /// --indicator-style into `indicator_style`, the last one winning.
     pub fn indicator(&self) -> IndicatorStyle {
         match self.indicator_style {
-            Some(IndicatorStyle::Slash) if self.classify => IndicatorStyle::Classify,
             Some(style) => style,
             None if self.classify => IndicatorStyle::Classify,
             None if self.file_type => IndicatorStyle::FileType,
@@ -650,7 +830,7 @@ mod tests {
     use super::*;
 
     fn parse(args: &[&str]) -> Args {
-        Args::try_parse_from(std::iter::once("eka").chain(args.iter().copied())).unwrap()
+        Args::from_args(std::iter::once("eka").chain(args.iter().copied())).unwrap()
     }
 
     #[test]
@@ -679,14 +859,22 @@ mod tests {
         assert_eq!(parse(&["-v"]).sort_field(), SortField::Version);
         assert_eq!(parse(&["-X"]).sort_field(), SortField::Extension);
         assert_eq!(parse(&["-U"]).sort_field(), SortField::None);
-        assert_eq!(parse(&["-vX"]).sort_field(), SortField::Version);
-        assert_eq!(parse(&["-tv"]).sort_field(), SortField::Time);
-        assert_eq!(parse(&["-StvX"]).sort_field(), SortField::Size);
-        assert_eq!(parse(&["-UStvX"]).sort_field(), SortField::None);
+        // The last sort option wins
+        assert_eq!(parse(&["-vX"]).sort_field(), SortField::Extension);
+        assert_eq!(parse(&["-Xv"]).sort_field(), SortField::Version);
+        assert_eq!(parse(&["-tv"]).sort_field(), SortField::Version);
+        assert_eq!(parse(&["-StvX"]).sort_field(), SortField::Extension);
+        assert_eq!(parse(&["-UStvXS"]).sort_field(), SortField::Size);
         assert_eq!(
             parse(&["--sort=version", "-U"]).sort_field(),
+            SortField::None
+        );
+        assert_eq!(
+            parse(&["-U", "--sort=version"]).sort_field(),
             SortField::Version
         );
+        assert_eq!(parse(&["-fS"]).sort_field(), SortField::Size);
+        assert_eq!(parse(&["-Sf"]).sort_field(), SortField::None);
     }
 
     #[test]
@@ -751,7 +939,15 @@ mod tests {
         assert_eq!(parse(&["-C"]).layout(false), Layout::Columns);
         assert_eq!(parse(&["-x"]).layout(false), Layout::Across);
         assert_eq!(parse(&["-m"]).layout(true), Layout::Commas);
-        assert_eq!(parse(&["-l", "-m"]).layout(true), Layout::Long);
+        // The last format option wins, except that -1 does not undo -l
+        assert_eq!(parse(&["-l", "-m"]).layout(true), Layout::Commas);
+        assert_eq!(parse(&["-m", "-l"]).layout(true), Layout::Long);
+        assert_eq!(parse(&["-l", "-C"]).layout(false), Layout::Columns);
+        assert_eq!(parse(&["-l", "-1"]).layout(true), Layout::Long);
+        assert_eq!(parse(&["-1", "-l"]).layout(true), Layout::Long);
+        assert_eq!(parse(&["-n", "-1"]).layout(true), Layout::Long);
+        assert_eq!(parse(&["-g", "-x"]).layout(true), Layout::Across);
+        assert_eq!(parse(&["-x", "-o"]).layout(true), Layout::Long);
     }
 
     #[test]
@@ -768,7 +964,8 @@ mod tests {
         assert_eq!(style(&["-N"], true, None), QuotingStyle::Literal);
         assert_eq!(style(&["-b"], false, None), QuotingStyle::Escape);
         assert_eq!(style(&["-Q"], false, None), QuotingStyle::C);
-        assert_eq!(style(&["-Q", "-b"], false, None), QuotingStyle::C);
+        assert_eq!(style(&["-Q", "-b"], false, None), QuotingStyle::Escape);
+        assert_eq!(style(&["-b", "-Q"], false, None), QuotingStyle::C);
         assert_eq!(
             style(&["-Q", "--quoting-style=shell"], false, None),
             QuotingStyle::Shell
@@ -813,9 +1010,10 @@ mod tests {
     #[test]
     fn test_new_formatting_options() {
         let a = parse(&["-s", "-k", "--block-size=2M", "-p"]);
-        assert!(a.size && a.kibibytes && a.indicator() == IndicatorStyle::Slash);
+        assert!(a.size && !a.kibibytes && a.indicator() == IndicatorStyle::Slash);
         assert_eq!(a.block_size, Some(BlockSize::of(2 * 1024 * 1024)));
-        assert!(parse(&["-F", "-p"]).classify);
+        assert_eq!(parse(&["-F", "-p"]).indicator(), IndicatorStyle::Slash);
+        assert_eq!(parse(&["-p", "-F"]).indicator(), IndicatorStyle::Classify);
         assert_eq!(
             parse(&["--indicator-style=slash"]).indicator(),
             IndicatorStyle::Slash
@@ -930,6 +1128,15 @@ mod tests {
         assert_eq!(parse(&["-F"]).indicator(), IndicatorStyle::Classify);
         assert_eq!(parse(&["-p"]).indicator(), IndicatorStyle::Slash);
         assert_eq!(parse(&["-pF"]).indicator(), IndicatorStyle::Classify);
+        assert_eq!(parse(&["-Fp"]).indicator(), IndicatorStyle::Slash);
+        assert_eq!(
+            parse(&["-F", "--file-type"]).indicator(),
+            IndicatorStyle::FileType
+        );
+        assert_eq!(
+            parse(&["--indicator-style=none", "-F"]).indicator(),
+            IndicatorStyle::Classify
+        );
         assert_eq!(
             parse(&["--file-type"]).indicator(),
             IndicatorStyle::FileType
@@ -949,5 +1156,56 @@ mod tests {
         assert_eq!(parse(&["--time=birth"]).time_field(), TimeField::Birth);
         assert_eq!(parse(&["--time=creation"]).time_field(), TimeField::Birth);
         assert!(parse(&["--si"]).human());
+    }
+
+    #[test]
+    fn repeated_options_are_accepted() {
+        assert!(parse(&["-aa"]).all);
+        assert!(parse(&["-ll"]).long);
+        assert_eq!(
+            parse(&["--sort=size", "--sort=time"]).sort_field(),
+            SortField::Time
+        );
+        assert_eq!(parse(&["-p", "-p"]).indicator(), IndicatorStyle::Slash);
+    }
+
+    #[test]
+    fn last_option_wins_for_hidden_entries_and_sizes() {
+        let a = parse(&["-a", "-A"]);
+        assert!(a.almost_all && !a.all && !a.show_dots() && a.show_hidden());
+        let a = parse(&["-A", "-a"]);
+        assert!(a.all && a.show_dots());
+        let a = parse(&["-f", "-A"]);
+        assert!(!a.show_dots() && a.show_hidden());
+        assert!(parse(&["-A", "-f"]).show_dots());
+        assert!(parse(&["-h", "-k"]).human());
+        assert!(parse(&["-k", "-h"]).human());
+        assert!(parse(&["--block-size=1K", "-k"]).block_size.is_none());
+        assert!(parse(&["-k", "--block-size=2K"]).block_size.is_some());
+        assert!(parse(&["-h", "--si"]).si);
+        let a = parse(&["--si", "-h"]);
+        assert!(a.human_readable && !a.si);
+        assert!(parse(&["-h", "--block-size=1K"]).block_size.is_some());
+        assert!(!parse(&["-h", "--block-size=1K"]).human());
+        assert!(parse(&["--block-size=1K", "-h"]).block_size.is_none());
+    }
+
+    #[test]
+    fn last_option_wins_for_time_quoting_and_symlinks() {
+        assert_eq!(parse(&["-c", "-u"]).time_field(), TimeField::Accessed);
+        assert_eq!(parse(&["-u", "-c"]).time_field(), TimeField::Changed);
+        assert_eq!(
+            parse(&["-u", "--time=ctime"]).time_field(),
+            TimeField::Changed
+        );
+        assert_eq!(parse(&["-t", "-u"]).sort_field(), SortField::Time);
+        assert_eq!(parse(&["-u"]).sort_field(), SortField::Time);
+        assert_eq!(parse(&["-u", "-l"]).sort_field(), SortField::Name);
+        assert!(parse(&["-q", "--show-control-chars"]).show_control_chars);
+        assert!(!parse(&["--show-control-chars", "-q"]).show_control_chars);
+        assert!(parse(&["-H", "-L"]).dereference());
+        assert!(!parse(&["-L", "-H"]).dereference());
+        assert!(parse(&["-L", "-H"]).dereference_cmdline());
+        assert!(!parse(&["-L", "-P"]).dereference_cmdline());
     }
 }

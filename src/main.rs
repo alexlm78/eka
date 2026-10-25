@@ -11,7 +11,6 @@ mod layout;
 mod quoting;
 mod types;
 
-use clap::Parser;
 use cli::Args;
 use directory::{io_message, read_directory, read_directory_recursive, shown};
 use formatter::Formatter;
@@ -25,7 +24,7 @@ use types::FileEntry;
 const EXIT_SERIOUS: i32 = 2;
 
 fn main() {
-    let args = Args::parse();
+    let args = Args::parse_resolved();
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
 

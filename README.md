@@ -80,7 +80,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-o` | Like `-l`, without the group |
 | `-G`, `--no-group` | With `-l`, do not print the group |
 | `-f` | Do not sort and list all entries (same as `-aU`) |
-| `--format=WORD` | `across` or `horizontal` (`-x`), `commas` (`-m`), `long` or `verbose` (`-l`), `single-column` (`-1`), `vertical` (`-C`). Unlike GNU ls, it does not follow "last option wins" against `-l -1 -C -x -m` |
+| `--format=WORD` | `across` or `horizontal` (`-x`), `commas` (`-m`), `long` or `verbose` (`-l`), `single-column` (`-1`), `vertical` (`-C`). |
 | `-a`, `--all` | Do not ignore entries starting with `.`; also show `.` and `..` |
 | `-A`, `--almost-all` | Like `-a`, without `.` and `..` |
 | `-d`, `--directory` | List directories themselves, not their contents |
@@ -92,7 +92,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-s`, `--size` | Print the allocated size of each entry in blocks (1 KiB by default); also prints `total` |
 | `-k`, `--kibibytes` | Use 1024-byte blocks (the default) |
 | `--block-size=SIZE` | Scale sizes by `SIZE`: `K M G T P E` and `KiB MiB ...` are powers of 1024, `KB MB GB ...` powers of 1000. A bare unit (`K`) means one of it and sizes then print with its suffix (`16K`); with a number in front (`1K`, `2K`, `1024`) they do not. `-h` overrides it |
-| `-p`, `--indicator-style=STYLE` | `none`, `slash` (`-p`: append `/` to directories), `file-type` or `classify` (`-F`); `-F` takes precedence over `-p` |
+| `-p`, `--indicator-style=STYLE` | `none`, `slash` (`-p`: append `/` to directories), `file-type` or `classify` (`-F`) |
 | `-R`, `--recursive` | List subdirectories recursively (symlinked directories are not followed) |
 | `-S` | Sort by size, largest first |
 | `-t` | Sort by time, newest first |
@@ -123,7 +123,7 @@ When several paths are given, files are listed first, then each directory under 
 | `--help` | Print help |
 | `-V`, `--version` | Print the version |
 
-Names are sorted bytewise in the `C` locale (`LC_ALL=C`). In any other locale (`LC_ALL`, `LC_COLLATE` or `LANG`, in that order) they sort ignoring case and accents, with punctuation before digits before letters, as GNU `ls` does in a UTF-8 locale. Ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When several sort options are combined the order of precedence is `--sort`, `-U`, `-S`, `-t`, `-v`, `-X`.
+Names are sorted bytewise in the `C` locale (`LC_ALL=C`). In any other locale (`LC_ALL`, `LC_COLLATE` or `LANG`, in that order) they sort ignoring case and accents, with punctuation before digits before letters, as GNU `ls` does in a UTF-8 locale. Ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When options compete for the same setting the last one wins, as in GNU `ls` (`-S -t` sorts by time, `-t -S` by size; `-F -p` appends only `/`). This holds for the sort options, the format options (`-1 -C -x -m -l --format`, except that `-1` does not undo `-l`), `-F -p --file-type --indicator-style`, `-a -A -f`, `-L -H -P`, `-h --si --block-size`, `-c -u --time`, and the quoting options. Repeating an option is allowed.
 
 Patterns for `-I` and `--hide` support `*`, `?`, `[abc]`, `[a-z]`, `[!abc]` and `\` escapes, are matched against the whole name (a leading dot is not special) and never apply to paths named on the command line.
 

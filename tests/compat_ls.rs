@@ -579,3 +579,64 @@ fn gnu_locale_sort_order_matches() {
         );
     }
 }
+
+#[test]
+fn gnu_last_option_wins() {
+    need_ls!();
+    if !system_ls_is_gnu() {
+        return;
+    }
+    assert_same(
+        &standard_tree(),
+        &[
+            &["-vX"],
+            &["-Xv"],
+            &["-tS"],
+            &["-St"],
+            &["-Ut"],
+            &["-tU"],
+            &["-fS"],
+            &["-Sf"],
+            &["-1", "-C", "-w", "40"],
+            &["-C", "-1", "-w", "40"],
+            &["-x", "-C", "-w", "40"],
+            &["-m", "-C", "-w", "40"],
+            &["-C", "-m", "-w", "40"],
+            &["-F", "-p"],
+            &["-p", "-F"],
+            &["-F", "--file-type"],
+            &["--file-type", "-F"],
+            &["--indicator-style=none", "-F"],
+            &["-F", "--indicator-style=none"],
+            &["-a", "-A"],
+            &["-A", "-a"],
+            &["-aa"],
+            &["-1", "-1"],
+            &["-Q", "-b"],
+            &["-b", "-Q"],
+            &["-N", "-Q"],
+            &["-Q", "-N"],
+            &["-u", "-c"],
+            &["-c", "-u"],
+            &["-t", "-u"],
+        ],
+    );
+    assert_long_same(
+        &standard_tree(),
+        &[
+            &["-l", "-1", "a.txt", "big.bin"],
+            &["-1", "-l", "a.txt", "big.bin"],
+            &["-l", "-m", "-w", "80", "a.txt", "big.bin"],
+            &["-m", "-l", "a.txt", "big.bin"],
+            &["-n", "-1", "a.txt", "big.bin"],
+            &["-l", "-h", "-k", "big.bin"],
+            &["-l", "-k", "-h", "big.bin"],
+            &["-l", "-h", "--si", "big.bin"],
+            &["-l", "--si", "-h", "big.bin"],
+            &["-l", "-h", "--block-size=1", "big.bin"],
+            &["-l", "--block-size=1", "-h", "big.bin"],
+            &["-lu", "-c", "a.txt", "big.bin"],
+            &["-lc", "-u", "a.txt", "big.bin"],
+        ],
+    );
+}

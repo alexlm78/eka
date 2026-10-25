@@ -7,15 +7,6 @@ change behavior.
 
 ## [Unreleased]
 
-### Changed
-
-- In a collating locale (`LC_ALL`, `LC_COLLATE` or `LANG` other than `C`,
-  `POSIX` or `C.*`) names sort ignoring case and accents, with punctuation
-  before digits before letters, as GNU ls does in a UTF-8 locale. The `C`
-  locale keeps the bytewise order.
-- `-X` compares from the last dot of the name, dot included, as GNU ls does,
-  so ".bashrc" has the extension ".bashrc".
-
 ### Added
 
 - `-l` prints `@` after the mode of a file with extended attributes on macOS,
@@ -26,8 +17,26 @@ change behavior.
 - `-f`, `--format`, `--file-type`, `--si`, `--indicator-style=none|file-type|classify`
   and `--time=birth` (`creation`).
 
+### Changed
+
+- In a collating locale (`LC_ALL`, `LC_COLLATE` or `LANG` other than `C`,
+  `POSIX` or `C.*`) names sort ignoring case and accents, with punctuation
+  before digits before letters, as GNU ls does in a UTF-8 locale. The `C`
+  locale keeps the bytewise order.
+- `-X` compares from the last dot of the name, dot included, as GNU ls does,
+  so ".bashrc" has the extension ".bashrc".
+
 ### Fixed
 
+- When options compete for the same setting the last one on the command line
+  wins, as in GNU ls: sort keys, format options (`-1` does not undo `-l`),
+  indicators, `-a`/`-A`/`-f`, `-L`/`-H`/`-P`, `-h`/`--si`/`--block-size`,
+  `-c`/`-u`/`--time` and the quoting options. Before, a fixed precedence
+  applied.
+- Repeating an option (`-aa`, `--sort=size --sort=time`) is no longer an
+  error.
+- `--time=atime` and `--time=ctime` without `-l` sort by that time, like
+  `-u` and `-c`.
 - `-l` shows `major, minor` for character and block devices instead of `0`.
 - Long options can be abbreviated when unambiguous (`--recurs`), and so can
   the values of `--sort`, `--time`, `--quoting-style` and `--color`

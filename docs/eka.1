@@ -89,7 +89,7 @@ Append an indicator to entries: \fB/\fR directory, \fB*\fR executable, \fB@\fR s
 Like \fB\-F\fR, but do not append \fB*\fR.
 .TP
 \fB\-p\fR, \fB\-\-indicator\-style\fR=\fISTYLE\fR
-Select the indicator: \fBnone\fR, \fBslash\fR (\fB\-p\fR, append \fB/\fR to directories), \fBfile\-type\fR or \fBclassify\fR (\fB\-F\fR). \fB\-F\fR takes precedence over \fB\-p\fR.
+Select the indicator: \fBnone\fR, \fBslash\fR (\fB\-p\fR, append \fB/\fR to directories), \fBfile\-type\fR or \fBclassify\fR (\fB\-F\fR).
 .TP
 \fB\-i\fR, \fB\-\-inode\fR
 Print the index number of each file.
@@ -132,7 +132,7 @@ List directories, and symbolic links to directories, before other entries. This 
 Reverse the order while sorting, including ties.
 .TP
 \fB\-\-sort\fR=\fIWORD\fR
-Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBversion\fR, \fBextension\fR. When several sort options are given the order of precedence is \fB\-\-sort\fR, \fB\-U\fR, \fB\-S\fR, \fB\-t\fR, \fB\-v\fR, \fB\-X\fR.
+Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBversion\fR, \fBextension\fR. When several sort options are given the last one wins.
 .PP
 Names are compared bytewise when the locale is \fBC\fR or \fBPOSIX\fR (\fBLC_ALL\fR, \fBLC_COLLATE\fR, then \fBLANG\fR). In any other locale they are compared ignoring case and accents, with punctuation before digits before letters, then by accents and case (lowercase first), as \fBls\fR does in a UTF-8 locale. Ties in size and time are broken by name. Directories are not grouped first.
 .SS "Time"

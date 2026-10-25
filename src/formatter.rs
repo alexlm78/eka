@@ -841,7 +841,6 @@ mod tests {
 
         let classified = Args {
             classify: true,
-            indicator_style: Some(IndicatorStyle::Slash),
             ..Default::default()
         };
         assert_eq!(render(&classified, &[dir], false), b"d/\n");
