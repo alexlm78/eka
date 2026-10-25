@@ -1,6 +1,6 @@
 [package]
 name = "eka"
-version = "0.3.0"
+version = "0.5.5"
 edition = "2024"
 rust-version = "1.88"
 description = "A modern replacement for ls with colors"

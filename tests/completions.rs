@@ -37,13 +37,7 @@ fn checked_in_completions_are_up_to_date() {
 #[test]
 fn completions_offer_the_option_values() {
     let fish = generated("fish");
-    for word in [
-        "extension",
-        "single-column",
-        "file-type",
-        "always",
-        "birth",
-    ] {
+    for word in ["extension", "single-column", "file-type", "always", "birth"] {
         assert!(fish.contains(word), "{word}");
     }
     let zsh = generated("zsh");
