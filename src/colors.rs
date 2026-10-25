@@ -229,6 +229,7 @@ mod tests {
             permissions: String::new(),
             modified: std::time::UNIX_EPOCH,
             accessed: std::time::UNIX_EPOCH,
+            created: None,
             changed: std::time::UNIX_EPOCH,
             symlink_target: None,
             inode: 0,

@@ -7,6 +7,11 @@ change behavior.
 
 ## [Unreleased]
 
+### Added
+
+- `-f`, `--format`, `--file-type`, `--si`, `--indicator-style=none|file-type|classify`
+  and `--time=birth` (`creation`).
+
 ### Fixed
 
 - `-l` shows `major, minor` for character and block devices instead of `0`.

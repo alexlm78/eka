@@ -70,14 +70,26 @@ Like \fB\-l\fR, but do not list the group.
 \fB\-G\fR, \fB\-\-no\-group\fR
 With \fB\-l\fR, do not print the group.
 .TP
+\fB\-f\fR
+Do not sort, and list all entries. Same as \fB\-aU\fR.
+.TP
+\fB\-\-format\fR=\fIWORD\fR
+Select the layout: \fBacross\fR or \fBhorizontal\fR (\fB\-x\fR), \fBcommas\fR (\fB\-m\fR), \fBlong\fR or \fBverbose\fR (\fB\-l\fR), \fBsingle\-column\fR (\fB\-1\fR), \fBvertical\fR (\fB\-C\fR).
+.TP
 \fB\-h\fR, \fB\-\-human\-readable\fR
 With \fB\-l\fR, print sizes as 1.5K, 234M, 2.0G. Sizes are powers of 1024 and are rounded up.
+.TP
+\fB\-\-si\fR
+Like \fB\-h\fR, but sizes are powers of 1000 (1.5k, 234M).
 .TP
 \fB\-F\fR, \fB\-\-classify\fR
 Append an indicator to entries: \fB/\fR directory, \fB*\fR executable, \fB@\fR symbolic link, \fB|\fR FIFO, \fB=\fR socket. In the long format a symbolic link shows its target instead of an indicator.
 .TP
-\fB\-p\fR, \fB\-\-indicator\-style\fR=\fBslash\fR
-Append \fB/\fR to directories. \fB\-F\fR takes precedence.
+\fB\-\-file\-type\fR
+Like \fB\-F\fR, but do not append \fB*\fR.
+.TP
+\fB\-p\fR, \fB\-\-indicator\-style\fR=\fISTYLE\fR
+Select the indicator: \fBnone\fR, \fBslash\fR (\fB\-p\fR, append \fB/\fR to directories), \fBfile\-type\fR or \fBclassify\fR (\fB\-F\fR). \fB\-F\fR takes precedence over \fB\-p\fR.
 .TP
 \fB\-i\fR, \fB\-\-inode\fR
 Print the index number of each file.
@@ -126,7 +138,7 @@ Names are compared bytewise, as with \fBLC_ALL=C ls\fR. Ties in size and time ar
 .SS "Time"
 .TP
 \fB\-\-time\fR=\fIWORD\fR
-Select which timestamp is shown with \fB\-l\fR and used for sorting with \fB\-t\fR: \fBatime\fR (\fBaccess\fR, \fBuse\fR), \fBctime\fR (\fBstatus\fR) or \fBmtime\fR (\fBmodification\fR).
+Select which timestamp is shown with \fB\-l\fR and used for sorting with \fB\-t\fR: \fBatime\fR (\fBaccess\fR, \fBuse\fR), \fBctime\fR (\fBstatus\fR), \fBmtime\fR (\fBmodification\fR) or \fBbirth\fR (\fBcreation\fR; \fB?\fR when the filesystem does not record it).
 .TP
 \fB\-\-time\-style\fR=\fISTYLE\fR
 Format timestamps in the long listing. \fBfull\-iso\fR is "2026-10-24 09:45:12.123456789 -0600"; \fBlong\-iso\fR is "2026-10-24 09:45"; \fBiso\fR is "10-24 09:45" for recent files and "2026-10-24" otherwise; \fBlocale\fR is the default. \fB+\fR\fIFORMAT\fR uses a \fBstrftime\fR(3) format; if it contains a newline, the part before it is used for older files and the part after it for recent ones.

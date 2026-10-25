@@ -36,7 +36,7 @@ pub fn read_directory(
 ) -> io::Result<Vec<FileEntry>> {
     let mut file_entries: Vec<FileEntry> = Vec::new();
 
-    if args.all {
+    if args.show_dots() {
         for dot in [".", ".."] {
             match FileEntry::with_name(path.join(dot), OsString::from(dot), false) {
                 Ok(e) if should_list(&e, args) => file_entries.push(e),
@@ -128,7 +128,7 @@ pub fn needs_metadata(args: &Args) -> bool {
     let color = *COLOR.get_or_init(|| crate::colors::color_enabled(args.color));
     args.is_long()
         || args.size
-        || args.classify // `*` needs the executable bit
+        || args.indicator() == crate::cli::IndicatorStyle::Classify // `*` needs the executable bit
         || args.dereference()
         || color // executables are colored by mode, broken links need the target
         || args.group_directories_first // a symlink to a directory groups as a directory
@@ -324,6 +324,7 @@ mod tests {
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,
+            created: None,
             changed: SystemTime::UNIX_EPOCH,
             symlink_target: None,
             inode: 0,

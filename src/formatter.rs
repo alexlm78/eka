@@ -1,4 +1,4 @@
-use crate::cli::{Args, Layout, TimeStyle};
+use crate::cli::{Args, IndicatorStyle, Layout, TimeStyle};
 use crate::colors::{Painter, Palette, color_enabled};
 use crate::layout;
 use crate::quoting::Quoter;
@@ -160,14 +160,7 @@ impl<'a> Formatter<'a> {
     fn cell_width(&self, entry: &FileEntry, inode_w: usize, size_w: usize) -> usize {
         let inode = if self.args.inode { inode_w + 1 } else { 0 };
         let size = if self.args.size { size_w + 1 } else { 0 };
-        let indicator = if self.args.classify {
-            entry.file_type.indicator().len()
-        } else if self.args.slash_indicator() && entry.file_type.is_dir() {
-            1
-        } else {
-            0
-        };
-        inode + size + self.name_cells(entry) + indicator
+        inode + size + self.name_cells(entry) + self.indicator(entry).len()
     }
 
     /// Records whether this listing mixes quoted and unquoted names
@@ -256,8 +249,8 @@ impl<'a> Formatter<'a> {
     pub fn write_total(&self, out: &mut impl Write, entries: &[FileEntry]) -> io::Result<()> {
         let bytes: u64 = entries.iter().map(|e| e.blocks.saturating_mul(512)).sum();
         let blocks = bytes.div_ceil(self.display_block_size());
-        if self.args.human_readable {
-            writeln!(out, "total {}", human_size(bytes))
+        if self.args.human() {
+            writeln!(out, "total {}", human_size(bytes, self.args.si))
         } else {
             writeln!(out, "total {}{}", blocks, self.block_suffix())
         }
@@ -296,8 +289,8 @@ impl<'a> Formatter<'a> {
 
     fn allocated_size(&self, entry: &FileEntry) -> String {
         let bytes = entry.blocks.saturating_mul(512);
-        if self.args.human_readable {
-            human_size(bytes)
+        if self.args.human() {
+            human_size(bytes, self.args.si)
         } else {
             format!(
                 "{}{}",
@@ -308,12 +301,21 @@ impl<'a> Formatter<'a> {
     }
 
     fn write_indicator(&self, out: &mut impl Write, entry: &FileEntry) -> io::Result<()> {
-        if self.args.classify {
-            out.write_all(entry.file_type.indicator().as_bytes())?;
-        } else if self.args.slash_indicator() && entry.file_type.is_dir() {
-            out.write_all(b"/")?;
+        out.write_all(self.indicator(entry).as_bytes())
+    }
+
+    /// Indicator appended to an entry name under the selected style
+    fn indicator(&self, entry: &FileEntry) -> &'static str {
+        match self.args.indicator() {
+            IndicatorStyle::None => "",
+            IndicatorStyle::Slash if entry.file_type.is_dir() => "/",
+            IndicatorStyle::Slash => "",
+            IndicatorStyle::FileType => match entry.file_type.indicator() {
+                "*" => "",
+                other => other,
+            },
+            IndicatorStyle::Classify => entry.file_type.indicator(),
         }
-        Ok(())
     }
 
     fn long_row(&self, entry: &FileEntry) -> LongRow {
@@ -323,8 +325,8 @@ impl<'a> Formatter<'a> {
         ) {
             let (major, minor) = device_numbers(entry.rdev);
             format!("{major}, {minor}")
-        } else if self.args.human_readable {
-            human_size(entry.size)
+        } else if self.args.human() {
+            human_size(entry.size, self.args.si)
         } else if let Some(block_size) = self.args.block_size {
             format!(
                 "{}{}",
@@ -339,11 +341,15 @@ impl<'a> Formatter<'a> {
             owner: self.user_name(entry.uid),
             group: self.group_name(entry.gid),
             size,
-            time: format_time(
-                entry.time(self.args.time_field()),
-                self.now,
-                &self.args.time_style(),
-            ),
+            time: if entry.has_time(self.args.time_field()) {
+                format_time(
+                    entry.time(self.args.time_field()),
+                    self.now,
+                    &self.args.time_style(),
+                )
+            } else {
+                "?".to_string()
+            },
         }
     }
 
@@ -403,28 +409,30 @@ fn name_width(name: &[u8]) -> usize {
     String::from_utf8_lossy(name).chars().count()
 }
 
-/// Formats a size like `ls -h`: powers of 1024, rounded up, one decimal below 10
-pub fn human_size(size: u64) -> String {
-    const UNITS: [char; 6] = ['K', 'M', 'G', 'T', 'P', 'E'];
-    if size < 1024 {
+/// Formats a size like `ls -h` (powers of 1024) or `ls --si` (powers of 1000):
+/// rounded up, one decimal below 10
+pub fn human_size(size: u64, si: bool) -> String {
+    let units: [char; 6] = [if si { 'k' } else { 'K' }, 'M', 'G', 'T', 'P', 'E'];
+    let base: u128 = if si { 1000 } else { 1024 };
+    if (size as u128) < base {
         return size.to_string();
     }
     let mut unit = 0;
-    let mut div: u128 = 1024;
-    while unit + 1 < UNITS.len() && (size as u128) >= div * 1024 {
-        div *= 1024;
+    let mut div: u128 = base;
+    while unit + 1 < units.len() && (size as u128) >= div * base {
+        div *= base;
         unit += 1;
     }
     let size = size as u128;
     let tenths = (size * 10).div_ceil(div);
     if tenths < 100 {
-        return format!("{}.{}{}", tenths / 10, tenths % 10, UNITS[unit]);
+        return format!("{}.{}{}", tenths / 10, tenths % 10, units[unit]);
     }
     let whole = size.div_ceil(div);
-    if whole >= 1024 && unit + 1 < UNITS.len() {
-        return format!("1.0{}", UNITS[unit + 1]);
+    if whole >= base && unit + 1 < units.len() {
+        return format!("1.0{}", units[unit + 1]);
     }
-    format!("{}{}", whole, UNITS[unit])
+    format!("{}{}", whole, units[unit])
 }
 
 /// Converts to local time without chrono's panicking `From<SystemTime>`, which
@@ -510,6 +518,7 @@ mod tests {
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::now(),
             accessed: SystemTime::UNIX_EPOCH,
+            created: None,
             changed: SystemTime::UNIX_EPOCH,
             symlink_target: None,
             inode: 12345,
@@ -549,7 +558,7 @@ mod tests {
             no_group: a.no_group,
             size: a.size,
             block_size: a.block_size,
-            indicator_style: a.indicator_style.clone(),
+            indicator_style: a.indicator_style,
             time: a.time,
             time_style: a.time_style.clone(),
             full_time: a.full_time,
@@ -630,17 +639,26 @@ mod tests {
     }
 
     #[test]
+    fn test_human_size_si() {
+        assert_eq!(human_size(999, true), "999");
+        assert_eq!(human_size(1000, true), "1.0k");
+        assert_eq!(human_size(1500, true), "1.5k");
+        assert_eq!(human_size(1_500_000, true), "1.5M");
+        assert_eq!(human_size(999_999, true), "1.0M"); // 1000k rolls over
+    }
+
+    #[test]
     fn test_human_size() {
-        assert_eq!(human_size(0), "0");
-        assert_eq!(human_size(1023), "1023");
-        assert_eq!(human_size(1024), "1.0K");
-        assert_eq!(human_size(1025), "1.1K"); // rounds up like GNU
-        assert_eq!(human_size(1536), "1.5K");
-        assert_eq!(human_size(10 * 1024), "10K");
-        assert_eq!(human_size(10 * 1024 + 1), "11K");
-        assert_eq!(human_size(1024 * 1024 - 1), "1.0M"); // 1024K rolls over
-        assert_eq!(human_size(5 * 1024 * 1024 * 1024), "5.0G");
-        assert_eq!(human_size(u64::MAX), "16E");
+        assert_eq!(human_size(0, false), "0");
+        assert_eq!(human_size(1023, false), "1023");
+        assert_eq!(human_size(1024, false), "1.0K");
+        assert_eq!(human_size(1025, false), "1.1K"); // rounds up like GNU
+        assert_eq!(human_size(1536, false), "1.5K");
+        assert_eq!(human_size(10 * 1024, false), "10K");
+        assert_eq!(human_size(10 * 1024 + 1, false), "11K");
+        assert_eq!(human_size(1024 * 1024 - 1, false), "1.0M"); // 1024K rolls over
+        assert_eq!(human_size(5 * 1024 * 1024 * 1024, false), "5.0G");
+        assert_eq!(human_size(u64::MAX, false), "16E");
     }
 
     #[test]
@@ -799,14 +817,14 @@ mod tests {
         let args = Args {
             inode: true,
             size: true,
-            indicator_style: Some("slash".to_string()),
+            indicator_style: Some(IndicatorStyle::Slash),
             ..Default::default()
         };
         assert_eq!(render(&args, &[dir.clone()], false), b"12345 2 d/\n");
 
         let classified = Args {
             classify: true,
-            indicator_style: Some("slash".to_string()),
+            indicator_style: Some(IndicatorStyle::Slash),
             ..Default::default()
         };
         assert_eq!(render(&classified, &[dir], false), b"d/\n");

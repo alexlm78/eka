@@ -1163,3 +1163,29 @@ fn device_files_show_major_and_minor_instead_of_a_size() {
     assert!(fields[4].ends_with(','), "{line}");
     assert!(fields[5].parse::<u64>().is_ok(), "{line}");
 }
+
+#[test]
+fn f_lists_hidden_entries_unsorted_with_dots() {
+    let f = standard_tree();
+    let mut got = names(&f, &["-f"]);
+    got.sort();
+    let mut want = strs(&VISIBLE);
+    want.extend(strs(&[".", "..", ".hdir", ".hidden"]));
+    want.sort();
+    assert_eq!(got, want);
+}
+
+#[test]
+fn file_type_omits_the_star_of_classify() {
+    let f = standard_tree();
+    let out = text(&eka(&f, &["-1", "--file-type"]).stdout);
+    assert!(out.lines().any(|l| l == "sub/"), "{out}");
+    assert!(!out.contains('*'), "{out}");
+}
+
+#[test]
+fn si_uses_powers_of_1000() {
+    let f = standard_tree();
+    let out = text(&eka(&f, &["-l", "--si", "big.bin"]).stdout);
+    assert!(out.contains("k ") || out.contains("M "), "{out}");
+}

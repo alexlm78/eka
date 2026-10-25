@@ -62,6 +62,29 @@ pub enum TimeField {
     Accessed,
     #[value(alias = "ctime", alias = "status")]
     Changed,
+    #[value(alias = "creation")]
+    Birth,
+}
+
+/// Format selected by --format
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum FormatWord {
+    Across,
+    Commas,
+    Horizontal,
+    Long,
+    SingleColumn,
+    Verbose,
+    Vertical,
+}
+
+/// Indicator appended to names (-F, -p, --file-type, --indicator-style)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum IndicatorStyle {
+    None,
+    Slash,
+    FileType,
+    Classify,
 }
 
 /// Date format used by long listings
@@ -205,6 +228,15 @@ pub struct Args {
     #[arg(long, action = ArgAction::Help)]
     pub help: Option<bool>,
 
+    /// Do not sort, and list all entries (same as -aU)
+    #[arg(short = 'f')]
+    pub no_sort_all: bool,
+
+    /// Set the layout to WORD: across, commas, horizontal, long,
+    /// single-column, verbose or vertical
+    #[arg(long, value_parser = enum_prefix::<FormatWord>, value_name = "WORD")]
+    pub format: Option<FormatWord>,
+
     /// List one file per line
     #[arg(short = '1')]
     pub one_per_line: bool,
@@ -265,6 +297,10 @@ pub struct Args {
     #[arg(short = 'h', long = "human-readable")]
     pub human_readable: bool,
 
+    /// Like -h, but use powers of 1000 (1k 234M 2G)
+    #[arg(long)]
+    pub si: bool,
+
     /// Print allocated size in blocks
     #[arg(short = 's', long = "size")]
     pub size: bool,
@@ -281,9 +317,14 @@ pub struct Args {
     #[arg(short = 'F', long = "classify")]
     pub classify: bool,
 
-    /// Append / to directories
-    #[arg(short = 'p', long = "indicator-style", value_name = "STYLE", value_parser = ["slash"], default_missing_value = "slash", num_args = 0..=1, require_equals = true)]
-    pub indicator_style: Option<String>,
+    /// Append an indicator to directories (-p), or choose the style: none,
+    /// slash, file-type or classify
+    #[arg(short = 'p', long = "indicator-style", value_name = "STYLE", value_parser = enum_prefix::<IndicatorStyle>, default_missing_value = "slash", num_args = 0..=1, require_equals = true)]
+    pub indicator_style: Option<IndicatorStyle>,
+
+    /// Likewise -F, except do not append `*`
+    #[arg(long = "file-type")]
+    pub file_type: bool,
 
     /// List subdirectories recursively
     #[arg(short = 'R', long = "recursive")]
@@ -415,7 +456,12 @@ pub struct Args {
 impl Args {
     /// Whether any option requires the long listing format.
     pub fn is_long(&self) -> bool {
-        self.long || self.numeric_uid_gid || self.no_owner || self.no_group_short || self.full_time
+        self.long
+            || self.numeric_uid_gid
+            || self.no_owner
+            || self.no_group_short
+            || self.full_time
+            || matches!(self.format, Some(FormatWord::Long | FormatWord::Verbose))
     }
 
     /// Sort key precedence: --sort=WORD, -U, -S, -t, -v, -X, then name.
@@ -423,7 +469,7 @@ impl Args {
     pub fn sort_field(&self) -> SortField {
         if let Some(s) = self.sort {
             s
-        } else if self.sort_none {
+        } else if self.sort_none || self.no_sort_all {
             SortField::None
         } else if self.sort_size {
             SortField::Size
@@ -456,13 +502,21 @@ impl Args {
     pub fn layout(&self, stdout_is_tty: bool) -> Layout {
         if self.is_long() {
             Layout::Long
-        } else if self.commas {
+        } else if self.commas || self.format == Some(FormatWord::Commas) {
             Layout::Commas
-        } else if self.across {
+        } else if self.across
+            || matches!(
+                self.format,
+                Some(FormatWord::Across | FormatWord::Horizontal)
+            )
+        {
             Layout::Across
-        } else if self.columns {
+        } else if self.columns || self.format == Some(FormatWord::Vertical) {
             Layout::Columns
-        } else if self.one_per_line || !stdout_is_tty {
+        } else if self.one_per_line
+            || self.format == Some(FormatWord::SingleColumn)
+            || !stdout_is_tty
+        {
             Layout::Single
         } else {
             Layout::Columns
@@ -512,7 +566,29 @@ impl Args {
 
     /// True when hidden entries are listed (-a or -A)
     pub fn show_hidden(&self) -> bool {
-        self.all || self.almost_all
+        self.all || self.almost_all || self.no_sort_all
+    }
+
+    /// True when `.` and `..` are listed (-a or -f)
+    pub fn show_dots(&self) -> bool {
+        self.all || self.no_sort_all
+    }
+
+    /// True when sizes are scaled to K, M, G (-h or --si)
+    pub fn human(&self) -> bool {
+        self.human_readable || self.si
+    }
+
+    /// Indicator style. An explicit --indicator-style wins, except that -F
+    /// still takes precedence over -p; then -F, then --file-type.
+    pub fn indicator(&self) -> IndicatorStyle {
+        match self.indicator_style {
+            Some(IndicatorStyle::Slash) if self.classify => IndicatorStyle::Classify,
+            Some(style) => style,
+            None if self.classify => IndicatorStyle::Classify,
+            None if self.file_type => IndicatorStyle::FileType,
+            None => IndicatorStyle::None,
+        }
     }
 
     /// Follow every symlink (-L), unless -P is given
@@ -532,11 +608,6 @@ impl Args {
             self.full_time,
             std::env::var("TIME_STYLE").ok().as_deref(),
         )
-    }
-
-    /// Whether -p requests directory slash indicators.
-    pub fn slash_indicator(&self) -> bool {
-        self.indicator_style.as_deref() == Some("slash")
     }
 }
 
@@ -742,10 +813,13 @@ mod tests {
     #[test]
     fn test_new_formatting_options() {
         let a = parse(&["-s", "-k", "--block-size=2M", "-p"]);
-        assert!(a.size && a.kibibytes && a.slash_indicator());
+        assert!(a.size && a.kibibytes && a.indicator() == IndicatorStyle::Slash);
         assert_eq!(a.block_size, Some(BlockSize::of(2 * 1024 * 1024)));
         assert!(parse(&["-F", "-p"]).classify);
-        assert!(parse(&["--indicator-style=slash"]).slash_indicator());
+        assert_eq!(
+            parse(&["--indicator-style=slash"]).indicator(),
+            IndicatorStyle::Slash
+        );
     }
 
     #[test]
@@ -827,5 +901,53 @@ mod tests {
     fn long_options_can_be_abbreviated() {
         assert!(parse(&["--recurs"]).recursive);
         assert_eq!(parse(&["--sort=t"]).sort, Some(SortField::Time));
+    }
+
+    #[test]
+    fn f_lists_everything_unsorted() {
+        let a = parse(&["-f"]);
+        assert!(a.show_dots() && a.show_hidden());
+        assert_eq!(a.sort_field(), SortField::None);
+    }
+
+    #[test]
+    fn format_selects_the_layout() {
+        assert_eq!(parse(&["--format=commas"]).layout(true), Layout::Commas);
+        assert_eq!(parse(&["--format=across"]).layout(true), Layout::Across);
+        assert_eq!(parse(&["--format=horizontal"]).layout(true), Layout::Across);
+        assert_eq!(parse(&["--format=vertical"]).layout(false), Layout::Columns);
+        assert_eq!(
+            parse(&["--format=single-column"]).layout(true),
+            Layout::Single
+        );
+        assert_eq!(parse(&["--format=verbose"]).layout(true), Layout::Long);
+        assert!(parse(&["--format=long"]).is_long());
+    }
+
+    #[test]
+    fn indicator_styles() {
+        assert_eq!(parse(&[]).indicator(), IndicatorStyle::None);
+        assert_eq!(parse(&["-F"]).indicator(), IndicatorStyle::Classify);
+        assert_eq!(parse(&["-p"]).indicator(), IndicatorStyle::Slash);
+        assert_eq!(parse(&["-pF"]).indicator(), IndicatorStyle::Classify);
+        assert_eq!(
+            parse(&["--file-type"]).indicator(),
+            IndicatorStyle::FileType
+        );
+        assert_eq!(
+            parse(&["--indicator-style=file-type"]).indicator(),
+            IndicatorStyle::FileType
+        );
+        assert_eq!(
+            parse(&["--indicator-style=none"]).indicator(),
+            IndicatorStyle::None
+        );
+    }
+
+    #[test]
+    fn birth_time_and_si() {
+        assert_eq!(parse(&["--time=birth"]).time_field(), TimeField::Birth);
+        assert_eq!(parse(&["--time=creation"]).time_field(), TimeField::Birth);
+        assert!(parse(&["--si"]).human());
     }
 }

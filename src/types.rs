@@ -105,6 +105,8 @@ pub struct FileEntry {
     pub permissions: String,
     pub modified: SystemTime,
     pub accessed: SystemTime,
+    /// Creation time, when the filesystem records it
+    pub created: Option<SystemTime>,
     pub changed: SystemTime,
     pub symlink_target: Option<OsString>,
     pub inode: u64,
@@ -195,6 +197,7 @@ impl FileEntry {
             permissions: format_permissions(&metadata),
             modified: unix_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_time(metadata.atime(), metadata.atime_nsec()),
+            created: metadata.created().ok(),
             changed: unix_time(metadata.ctime(), metadata.ctime_nsec()),
             symlink_target,
             inode: metadata.ino(),
@@ -237,6 +240,7 @@ impl FileEntry {
             permissions: String::new(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,
+            created: None,
             changed: SystemTime::UNIX_EPOCH,
             symlink_target: None,
             inode: entry.ino(),
@@ -267,7 +271,14 @@ impl FileEntry {
             TimeField::Modified => self.modified,
             TimeField::Accessed => self.accessed,
             TimeField::Changed => self.changed,
+            // Unknown birth times sort as the oldest
+            TimeField::Birth => self.created.unwrap_or(SystemTime::UNIX_EPOCH),
         }
+    }
+
+    /// Whether the selected timestamp is known (birth time may not be)
+    pub fn has_time(&self, field: TimeField) -> bool {
+        field != TimeField::Birth || self.created.is_some()
     }
 }
 

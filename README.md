@@ -79,16 +79,20 @@ When several paths are given, files are listed first, then each directory under 
 | `-g` | Like `-l`, without the owner |
 | `-o` | Like `-l`, without the group |
 | `-G`, `--no-group` | With `-l`, do not print the group |
+| `-f` | Do not sort and list all entries (same as `-aU`) |
+| `--format=WORD` | `across` or `horizontal` (`-x`), `commas` (`-m`), `long` or `verbose` (`-l`), `single-column` (`-1`), `vertical` (`-C`). Unlike GNU ls, it does not follow "last option wins" against `-l -1 -C -x -m` |
 | `-a`, `--all` | Do not ignore entries starting with `.`; also show `.` and `..` |
 | `-A`, `--almost-all` | Like `-a`, without `.` and `..` |
 | `-d`, `--directory` | List directories themselves, not their contents |
 | `-h`, `--human-readable` | With `-l`, print sizes as `1.5K`, `234M`, `2.0G` (rounded up) |
+| `--si` | Like `-h`, but with powers of 1000 (`1.5k`, `234M`) |
 | `-F`, `--classify` | Append an indicator (`/` directory, `*` executable, `@` symlink, `\|` fifo, `=` socket) |
+| `--file-type` | Like `-F`, without `*` |
 | `-i`, `--inode` | Print the inode number of each entry |
 | `-s`, `--size` | Print the allocated size of each entry in blocks (1 KiB by default); also prints `total` |
 | `-k`, `--kibibytes` | Use 1024-byte blocks (the default) |
 | `--block-size=SIZE` | Scale sizes by `SIZE`: `K M G T P E` and `KiB MiB ...` are powers of 1024, `KB MB GB ...` powers of 1000. A bare unit (`K`) means one of it and sizes then print with its suffix (`16K`); with a number in front (`1K`, `2K`, `1024`) they do not. `-h` overrides it |
-| `-p`, `--indicator-style=slash` | Append `/` to directories; `-F` takes precedence |
+| `-p`, `--indicator-style=STYLE` | `none`, `slash` (`-p`: append `/` to directories), `file-type` or `classify` (`-F`); `-F` takes precedence over `-p` |
 | `-R`, `--recursive` | List subdirectories recursively (symlinked directories are not followed) |
 | `-S` | Sort by size, largest first |
 | `-t` | Sort by time, newest first |
@@ -106,7 +110,7 @@ When several paths are given, files are listed first, then each directory under 
 | `-L`, `--dereference` | Show information for the file a symlink points to |
 | `-H`, `--dereference-command-line` | Follow symlinks named on the command line |
 | `-P` | Never follow symlinks (default); overrides `-H` and `-L` |
-| `--time=WORD` | Show and sort by `atime` (`access`, `use`), `ctime` (`status`) or `mtime` (`modification`) |
+| `--time=WORD` | Show and sort by `atime` (`access`, `use`), `ctime` (`status`) `mtime` (`modification`) or `birth` (`creation`; prints `?` when the filesystem does not record it) |
 | `--time-style=STYLE` | `full-iso`, `long-iso`, `iso`, `locale` or `+FORMAT` (a `strftime` format; if it contains a newline, the part before it is used for older files and the part after it for recent ones). `$TIME_STYLE` is the default |
 | `--full-time` | Like `-l --time-style=full-iso` |
 | `-N`, `--literal` | Print names as they are |

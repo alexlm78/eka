@@ -510,3 +510,34 @@ fn device_numbers_match_ls() {
         );
     }
 }
+
+#[test]
+fn gnu_format_and_indicator_options_match() {
+    need_ls!();
+    if !system_ls_is_gnu() {
+        return;
+    }
+    assert_same(
+        &standard_tree(),
+        &[
+            &["--format=single-column"],
+            &["--format=commas", "-w", "40"],
+            &["--format=across", "-w", "40"],
+            &["--format=horizontal", "-w", "40"],
+            &["--format=vertical", "-w", "40"],
+            &["--file-type", "-1"],
+            &["--indicator-style=file-type", "-1"],
+            &["--indicator-style=slash", "-1"],
+            &["--indicator-style=none", "-1"],
+        ],
+    );
+    assert_long_same(
+        &standard_tree(),
+        &[
+            &["--format=long", "a.txt", "big.bin"],
+            &["-l", "--si", "a.txt", "big.bin"],
+            &["-lh", "--si", "big.bin"],
+            &["-ls", "--si", "big.bin"],
+        ],
+    );
+}
