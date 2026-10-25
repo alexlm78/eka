@@ -1,8 +1,60 @@
 use crate::quoting::QuotingStyle;
 use chrono::format::{Item, StrftimeItems};
-use clap::{ArgAction, ArgMatches, CommandFactory, FromArgMatches, Parser, ValueEnum, ValueHint};
+use clap::builder::{PossibleValue, TypedValueParser};
+use clap::error::ErrorKind;
+use clap::{
+    Arg, ArgAction, ArgMatches, Command, CommandFactory, FromArgMatches, Parser, ValueEnum,
+    ValueHint,
+};
 use std::ffi::OsString;
 use std::str::FromStr;
+
+/// Value parser for an enum option that takes any unambiguous prefix, and
+/// still lists the values for `--help` and the shell completions
+pub struct PrefixParser<T>(std::marker::PhantomData<fn() -> T>);
+
+impl<T> PrefixParser<T> {
+    pub const fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T> Clone for PrefixParser<T> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<T: ValueEnum + Clone + Send + Sync + 'static> TypedValueParser for PrefixParser<T> {
+    type Value = T;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<T, clap::Error> {
+        let option = arg.map_or_else(String::new, |a| format!(" for '--{}'", a.get_id()));
+        let text = value.to_str().ok_or_else(|| {
+            cmd.clone()
+                .error(ErrorKind::InvalidUtf8, format!("invalid UTF-8{option}"))
+        })?;
+        enum_prefix::<T>(text).map_err(|message| {
+            cmd.clone().error(
+                ErrorKind::InvalidValue,
+                format!("invalid value '{text}'{option}: {message}"),
+            )
+        })
+    }
+
+    fn possible_values(&self) -> Option<Box<dyn Iterator<Item = PossibleValue> + '_>> {
+        Some(Box::new(
+            T::value_variants()
+                .iter()
+                .filter_map(|v| v.to_possible_value()),
+        ))
+    }
+}
 
 /// Parses an enum value, accepting any unambiguous prefix as GNU ls does
 /// (`--sort=t` is `--sort=time`)
@@ -240,6 +292,10 @@ pub struct Args {
     #[arg(long, action = ArgAction::Help)]
     pub help: Option<bool>,
 
+    /// Print the completion script for SHELL and exit
+    #[arg(long, value_name = "SHELL", value_enum)]
+    pub completions: Option<clap_complete::Shell>,
+
     /// Layout chosen by the last format option, set by `resolve`
     #[arg(skip)]
     pub layout_choice: Option<LayoutChoice>,
@@ -250,7 +306,7 @@ pub struct Args {
 
     /// Set the layout to WORD: across, commas, horizontal, long,
     /// single-column, verbose or vertical
-    #[arg(long, value_parser = enum_prefix::<FormatWord>, value_name = "WORD")]
+    #[arg(long, value_parser = PrefixParser::<FormatWord>::new(), value_name = "WORD")]
     pub format: Option<FormatWord>,
 
     /// List one file per line
@@ -335,7 +391,7 @@ pub struct Args {
 
     /// Append an indicator to directories (-p), or choose the style: none,
     /// slash, file-type or classify
-    #[arg(short = 'p', long = "indicator-style", value_name = "STYLE", value_parser = enum_prefix::<IndicatorStyle>, default_missing_value = "slash", num_args = 0..=1, require_equals = true)]
+    #[arg(short = 'p', long = "indicator-style", value_name = "STYLE", value_parser = PrefixParser::<IndicatorStyle>::new(), default_missing_value = "slash", num_args = 0..=1, require_equals = true)]
     pub indicator_style: Option<IndicatorStyle>,
 
     /// Likewise -F, except do not append `*`
@@ -377,7 +433,7 @@ pub struct Args {
     pub sort_change: bool,
 
     /// Select the timestamp shown by -l and used by -t
-    #[arg(long = "time", value_parser = enum_prefix::<TimeField>, value_name = "WORD")]
+    #[arg(long = "time", value_parser = PrefixParser::<TimeField>::new(), value_name = "WORD")]
     pub time: Option<TimeField>,
 
     /// Select the timestamp format used by -l
@@ -429,7 +485,7 @@ pub struct Args {
     pub show_control_chars: bool,
 
     /// Use quoting style WORD for entry names
-    #[arg(long = "quoting-style", value_parser = enum_prefix::<QuotingStyle>, value_name = "WORD")]
+    #[arg(long = "quoting-style", value_parser = PrefixParser::<QuotingStyle>::new(), value_name = "WORD")]
     pub quoting_style: Option<QuotingStyle>,
 
     /// Print the index number of each file
@@ -450,13 +506,13 @@ pub struct Args {
     pub no_deref: bool,
 
     /// Sort by WORD instead of name
-    #[arg(long, value_parser = enum_prefix::<SortField>, value_name = "WORD")]
+    #[arg(long, value_parser = PrefixParser::<SortField>::new(), value_name = "WORD")]
     pub sort: Option<SortField>,
 
     /// Colorize the output
     #[arg(
         long,
-        value_parser = enum_prefix::<ColorWhen>,
+        value_parser = PrefixParser::<ColorWhen>::new(),
         value_name = "WHEN",
         num_args = 0..=1,
         require_equals = true,
@@ -467,6 +523,11 @@ pub struct Args {
     /// Files or directories to list
     #[arg(value_hint = ValueHint::AnyPath, default_value = ".")]
     pub paths: Vec<String>,
+}
+
+/// Writes the completion script of `shell` for the `eka` command
+pub fn write_completions(shell: clap_complete::Shell, out: &mut dyn std::io::Write) {
+    clap_complete::generate(shell, &mut Args::command(), "eka", out);
 }
 
 impl Args {

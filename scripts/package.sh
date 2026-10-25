@@ -17,6 +17,8 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/$name" "$outdir"
 install -m 755 "$binary" "$stage/$name/eka"
 install -m 644 "$root/docs/eka.1" "$root/README.md" "$root/LICENSE" "$root/CHANGELOG.md" "$stage/$name/"
+mkdir -p "$stage/$name/completions"
+install -m 644 "$root"/completions/* "$stage/$name/completions/"
 
 archive="$outdir/$name.tar.gz"
 tar -C "$stage" -czf "$archive" "$name"

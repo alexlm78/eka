@@ -1,0 +1,122 @@
+#compdef eka
+
+autoload -U is-at-least
+
+_eka() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'--completions=[Print the completion script for SHELL and exit]:SHELL:(bash elvish fish powershell zsh)' \
+'--format=[Set the layout to WORD\: across, commas, horizontal, long, single-column, verbose or vertical]:WORD:(across commas horizontal long single-column verbose vertical)' \
+'-T+[Assume tab stops at each COLS (default 8); 0 pads columns with spaces]:COLS:_default' \
+'--tabsize=[Assume tab stops at each COLS (default 8); 0 pads columns with spaces]:COLS:_default' \
+'-w+[Set output width to COLS; 0 means no limit]:COLS:_default' \
+'--width=[Set output width to COLS; 0 means no limit]:COLS:_default' \
+'--block-size=[Scale displayed sizes by SIZE bytes]:SIZE:_default' \
+'-p+[Append an indicator to directories (-p), or choose the style\: none, slash, file-type or classify]::STYLE:(none slash file-type classify)' \
+'--indicator-style=[Append an indicator to directories (-p), or choose the style\: none, slash, file-type or classify]::STYLE:(none slash file-type classify)' \
+'--time=[Select the timestamp shown by -l and used by -t]:WORD:(modified accessed changed birth)' \
+'--time-style=[Select the timestamp format used by -l]:STYLE:_default' \
+'*-I+[Do not list entries matching PATTERN]:PATTERN:_default' \
+'*--ignore=[Do not list entries matching PATTERN]:PATTERN:_default' \
+'*--hide=[Do not list entries matching PATTERN unless -a or -A is given]:PATTERN:_default' \
+'--quoting-style=[Use quoting style WORD for entry names]:WORD:((literal\:"Print names as they are"
+shell\:"Quote with single quotes only when the shell would need it"
+shell-always\:"Always quote with single quotes"
+shell-escape\:"Like \`shell\`, with ANSI-C escapes for unprintable characters"
+shell-escape-always\:"Like \`shell-always\`, with ANSI-C escapes for unprintable characters"
+c\:"C string literal in double quotes"
+escape\:"Backslash escapes without quotes"))' \
+'--sort=[Sort by WORD instead of name]:WORD:((name\:"Sort by name (default)"
+none\:"Directory order, no sorting"
+size\:"Sort by file size, largest first"
+time\:"Sort by time, newest first"
+extension\:"Sort by extension"
+version\:"Sort by version number in names"))' \
+'--color=[Colorize the output]::WHEN:(always auto never)' \
+'--help[Print help]' \
+'-f[Do not sort, and list all entries (same as -aU)]' \
+'-1[List one file per line]' \
+'-C[List entries by columns]' \
+'-x[List entries by lines instead of by columns]' \
+'-m[Fill the width with a comma separated list of entries]' \
+'-l[Use a long listing format]' \
+'-n[Like -l, but show numeric user and group IDs]' \
+'--numeric-uid-gid[Like -l, but show numeric user and group IDs]' \
+'-g[Like -l, but do not list the owner]' \
+'-o[Like -l, but do not list the group]' \
+'-G[In long format, do not print the group column]' \
+'--no-group[In long format, do not print the group column]' \
+'-d[List directories themselves, not their contents]' \
+'--directory[List directories themselves, not their contents]' \
+'-a[Do not ignore entries whose names start with a dot]' \
+'--all[Do not ignore entries whose names start with a dot]' \
+'-A[Do not list implied . and ..]' \
+'--almost-all[Do not list implied . and ..]' \
+'-h[With -l, print sizes in human readable format (1K 234M 2G)]' \
+'--human-readable[With -l, print sizes in human readable format (1K 234M 2G)]' \
+'--si[Like -h, but use powers of 1000 (1k 234M 2G)]' \
+'-s[Print allocated size in blocks]' \
+'--size[Print allocated size in blocks]' \
+'-k[Use 1024-byte blocks (the default)]' \
+'--kibibytes[Use 1024-byte blocks (the default)]' \
+'-F[Append indicator (one of */=>@|) to entries]' \
+'--classify[Append indicator (one of */=>@|) to entries]' \
+'--file-type[Likewise -F, except do not append \`*\`]' \
+'-R[List subdirectories recursively]' \
+'--recursive[List subdirectories recursively]' \
+'-S[Sort by file size, largest first]' \
+'-t[Sort by time, newest first]' \
+'-v[Sort by version number in names]' \
+'-X[Sort by extension]' \
+'-U[Do not sort; list entries in directory order]' \
+'-u[With -lt\: sort by, and show, access time; with -l\: show access time and sort by name; otherwise\: sort by access time, newest first]' \
+'-c[With -lt\: sort by, and show, ctime; with -l\: show ctime and sort by name; otherwise\: sort by ctime, newest first]' \
+'--full-time[Like -l --time-style=full-iso]' \
+'-r[Reverse order while sorting]' \
+'--reverse[Reverse order while sorting]' \
+'--group-directories-first[List directories before other entries]' \
+'-B[Do not list entries ending in ~]' \
+'--ignore-backups[Do not list entries ending in ~]' \
+'-N[Print entry names without quoting]' \
+'--literal[Print entry names without quoting]' \
+'-b[Print C-style escapes for nongraphic characters]' \
+'--escape[Print C-style escapes for nongraphic characters]' \
+'-Q[Enclose entry names in double quotes]' \
+'--quote-name[Enclose entry names in double quotes]' \
+'-q[Print ? instead of nongraphic characters]' \
+'--hide-control-chars[Print ? instead of nongraphic characters]' \
+'--show-control-chars[Show nongraphic characters as is (the default when not a terminal)]' \
+'-i[Print the index number of each file]' \
+'--inode[Print the index number of each file]' \
+'-H[Follow symbolic links listed on the command line]' \
+'--dereference-command-line[Follow symbolic links listed on the command line]' \
+'-L[When showing file information for a symbolic link, show the information for the file the link references]' \
+'--dereference[When showing file information for a symbolic link, show the information for the file the link references]' \
+'-P[Do not follow symbolic links (default; overrides -H and -L)]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::paths -- Files or directories to list:_files' \
+&& ret=0
+}
+
+(( $+functions[_eka_commands] )) ||
+_eka_commands() {
+    local commands; commands=()
+    _describe -t commands 'eka commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_eka" ]; then
+    _eka "$@"
+else
+    compdef _eka eka
+fi

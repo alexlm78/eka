@@ -17,9 +17,9 @@ pub enum QuotingStyle {
     Shell,
     /// Always quote with single quotes
     ShellAlways,
-    /// Like `shell`, with `$'...'` escapes for unprintable characters
+    /// Like `shell`, with ANSI-C escapes for unprintable characters
     ShellEscape,
-    /// Like `shell-always`, with `$'...'` escapes for unprintable characters
+    /// Like `shell-always`, with ANSI-C escapes for unprintable characters
     ShellEscapeAlways,
     /// C string literal in double quotes
     C,

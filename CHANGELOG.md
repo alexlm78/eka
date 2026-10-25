@@ -9,6 +9,15 @@ change behavior.
 
 ### Added
 
+- `--completions SHELL` prints the completion script for bash, zsh, fish,
+  elvish or PowerShell, with the values of the options that take a word. The
+  scripts for bash, zsh and fish are checked in under `completions/`, included
+  in the release archives, and a test fails when they are out of date
+  (`scripts/gen-completions.sh` refreshes them).
+- A Homebrew formula in `packaging/homebrew/eka.rb` and
+  `scripts/update-formula.sh` to point it at a release tag.
+- `--help` and the completions list the possible values of `--sort`, `--time`,
+  `--quoting-style`, `--color`, `--format` and `--indicator-style` again.
 - `-l` prints `@` after the mode of a file with extended attributes on macOS,
   and `+` (POSIX ACL) or `.` (SELinux context) on Linux, as the system `ls`
   does. The marker column appears only when some file in the listing has a

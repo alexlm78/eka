@@ -25,6 +25,10 @@ const EXIT_SERIOUS: i32 = 2;
 
 fn main() {
     let args = Args::parse_resolved();
+    if let Some(shell) = args.completions {
+        cli::write_completions(shell, &mut io::stdout());
+        return;
+    }
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
 

@@ -18,15 +18,26 @@ Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It
 
 ## Installation
 
+### Homebrew
+
+The formula builds from source and installs the man page and the completions for bash, zsh and fish. It lives in `packaging/homebrew/eka.rb`; publish it in a tap (a repository named `homebrew-eka`) and install with:
+
+```bash
+brew tap alexlm78/eka
+brew install eka
+```
+
 ### From a release
 
-Download the archive for your system from the [releases page](https://github.com/alexlm78/eka/releases) (macOS and Linux, x86-64 and ARM64), check it against `SHA256SUMS`, and unpack it. Each archive holds the `eka` binary, the man page, the README, the license and the changelog:
+Download the archive for your system from the [releases page](https://github.com/alexlm78/eka/releases) (macOS and Linux, x86-64 and ARM64), check it against `SHA256SUMS`, and unpack it. Each archive holds the `eka` binary, the man page, the shell completions (`completions/`), the README, the license and the changelog:
 
 ```bash
 tar -xzf eka-0.3.0-aarch64-apple-darwin.tar.gz
 install -m 755 eka-0.3.0-aarch64-apple-darwin/eka /usr/local/bin/eka
 install -m 644 eka-0.3.0-aarch64-apple-darwin/eka.1 /usr/local/share/man/man1/eka.1
 ```
+
+The completions come with releases after 0.3.0; see [Shell completions](#shell-completions) to install them.
 
 Release archives carry a build-provenance attestation; verify one with `gh attestation verify FILE --repo alexlm78/eka`.
 
@@ -42,9 +53,29 @@ cargo build --release
 # Install the binary (optional)
 cargo install --path .
 
+# Or install straight from GitHub, without cloning
+cargo install --git https://github.com/alexlm78/eka
+
 # Install the man page (optional)
 ./install-manpage.sh
 ```
+
+### Shell completions
+
+`eka --completions SHELL` prints the completion script for `bash`, `zsh`, `fish`, `elvish` or `powershell`. The scripts for the first three are also in `completions/`.
+
+```bash
+# bash (add to ~/.bashrc, or copy to a bash-completion directory)
+source <(eka --completions bash)
+
+# zsh: put the script in a directory of $fpath, then run compinit
+eka --completions zsh > "${fpath[1]}/_eka"
+
+# fish
+eka --completions fish > ~/.config/fish/completions/eka.fish
+```
+
+After changing the command-line options, run `scripts/gen-completions.sh` to refresh `completions/`; `cargo test` fails when they are out of date.
 
 ## Usage
 
@@ -121,6 +152,7 @@ When several paths are given, files are listed first, then each directory under 
 | `--quoting-style=WORD` | `literal`, `shell`, `shell-always`, `shell-escape`, `shell-escape-always`, `c` or `escape` |
 | `--color[=WHEN]` | `always`, `auto` (default) or `never`; plain `--color` means `always` |
 | `--help` | Print help |
+| `--completions=SHELL` | Print the completion script for `bash`, `zsh`, `fish`, `elvish` or `powershell` and exit |
 | `-V`, `--version` | Print the version |
 
 Names are sorted bytewise in the `C` locale (`LC_ALL=C`). In any other locale (`LC_ALL`, `LC_COLLATE` or `LANG`, in that order) they sort ignoring case and accents, with punctuation before digits before letters, as GNU `ls` does in a UTF-8 locale. Ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When options compete for the same setting the last one wins, as in GNU `ls` (`-S -t` sorts by time, `-t -S` by size; `-F -p` appends only `/`). This holds for the sort options, the format options (`-1 -C -x -m -l --format`, except that `-1` does not undo `-l`), `-F -p --file-type --indicator-style`, `-a -A -f`, `-L -H -P`, `-h --si --block-size`, `-c -u --time`, and the quoting options. Repeating an option is allowed.
