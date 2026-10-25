@@ -320,6 +320,7 @@ mod tests {
             path: PathBuf::from(name),
             file_type: FileType::Regular,
             size,
+            rdev: 0,
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,

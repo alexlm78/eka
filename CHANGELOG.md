@@ -5,6 +5,15 @@ All notable changes to eka are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0.0, minor versions may
 change behavior.
 
+## [Unreleased]
+
+### Fixed
+
+- `-l` shows `major, minor` for character and block devices instead of `0`.
+- Long options can be abbreviated when unambiguous (`--recurs`), and so can
+  the values of `--sort`, `--time`, `--quoting-style` and `--color`
+  (`--sort=t`), as in GNU ls.
+
 ## [0.3.0] - 2026-10-24
 
 First public release. Eka is now a close GNU `ls` replacement for macOS and

@@ -225,6 +225,7 @@ mod tests {
             path: name.into(),
             file_type: ft,
             size: 0,
+            rdev: 0,
             permissions: String::new(),
             modified: std::time::UNIX_EPOCH,
             accessed: std::time::UNIX_EPOCH,

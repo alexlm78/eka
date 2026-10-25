@@ -487,3 +487,26 @@ fn gnu_quoting_of_symlink_targets_and_headings_matches() {
         ],
     );
 }
+
+#[test]
+fn device_numbers_match_ls() {
+    // BSD ls prints the device number in hex, so only GNU is a reference
+    if !has_system_ls() || !system_ls_is_gnu() {
+        return;
+    }
+    let f = hostile_tree();
+    // Fields: mode links owner group major, minor ...
+    let numbers = |out: &std::process::Output| {
+        let line = text(&out.stdout);
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        (fields[4].to_string(), fields[5].to_string())
+    };
+    for dev in ["/dev/null", "/dev/zero"] {
+        let args = ["-l", dev];
+        assert_eq!(
+            numbers(&eka(&f, &args)),
+            numbers(&sys_ls(&f, &args)),
+            "{dev}"
+        );
+    }
+}

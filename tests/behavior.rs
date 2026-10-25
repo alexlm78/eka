@@ -1153,3 +1153,13 @@ fn closed_pipe_is_not_an_error() {
     assert_eq!(out.status.code(), Some(0), "stderr: {}", text(&out.stderr));
     assert!(out.stderr.is_empty(), "{}", text(&out.stderr));
 }
+
+#[test]
+fn device_files_show_major_and_minor_instead_of_a_size() {
+    let f = standard_tree();
+    let out = eka(&f, &["-l", "/dev/null"]);
+    let line = text(&out.stdout);
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    assert!(fields[4].ends_with(','), "{line}");
+    assert!(fields[5].parse::<u64>().is_ok(), "{line}");
+}

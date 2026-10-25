@@ -100,6 +100,8 @@ pub struct FileEntry {
     pub path: PathBuf,
     pub file_type: FileType,
     pub size: u64,
+    /// Device number, meaningful for character and block devices
+    pub rdev: u64,
     pub permissions: String,
     pub modified: SystemTime,
     pub accessed: SystemTime,
@@ -118,6 +120,21 @@ pub struct FileEntry {
     /// A symlink whose target is a directory (grouped with directories by
     /// --group-directories-first, as GNU ls does)
     pub links_to_dir: bool,
+}
+
+/// Splits a device number into (major, minor)
+#[cfg(target_os = "macos")]
+pub fn device_numbers(rdev: u64) -> (u64, u64) {
+    ((rdev >> 24) & 0xff, rdev & 0xff_ffff)
+}
+
+/// Splits a device number into (major, minor)
+#[cfg(not(target_os = "macos"))]
+pub fn device_numbers(rdev: u64) -> (u64, u64) {
+    (
+        ((rdev >> 8) & 0xfff) | ((rdev >> 32) & !0xfff),
+        (rdev & 0xff) | ((rdev >> 12) & !0xff),
+    )
 }
 
 fn unix_time(secs: i64, nsecs: i64) -> SystemTime {
@@ -174,6 +191,7 @@ impl FileEntry {
             name,
             file_type,
             size: metadata.len(),
+            rdev: metadata.rdev(),
             permissions: format_permissions(&metadata),
             modified: unix_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_time(metadata.atime(), metadata.atime_nsec()),
@@ -215,6 +233,7 @@ impl FileEntry {
         Ok(Self {
             file_type,
             size: 0,
+            rdev: 0,
             permissions: String::new(),
             modified: SystemTime::UNIX_EPOCH,
             accessed: SystemTime::UNIX_EPOCH,

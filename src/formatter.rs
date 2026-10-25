@@ -2,7 +2,7 @@ use crate::cli::{Args, Layout, TimeStyle};
 use crate::colors::{Painter, Palette, color_enabled};
 use crate::layout;
 use crate::quoting::Quoter;
-use crate::types::FileEntry;
+use crate::types::{FileEntry, FileType, device_numbers};
 use chrono::{DateTime, Local, Timelike};
 use std::cell::Cell;
 use std::fmt::Write as _;
@@ -317,7 +317,13 @@ impl<'a> Formatter<'a> {
     }
 
     fn long_row(&self, entry: &FileEntry) -> LongRow {
-        let size = if self.args.human_readable {
+        let size = if matches!(
+            entry.file_type,
+            FileType::CharDevice | FileType::BlockDevice
+        ) {
+            let (major, minor) = device_numbers(entry.rdev);
+            format!("{major}, {minor}")
+        } else if self.args.human_readable {
             human_size(entry.size)
         } else if let Some(block_size) = self.args.block_size {
             format!(
@@ -500,6 +506,7 @@ mod tests {
             path: PathBuf::from("x"),
             file_type: FileType::Regular,
             size: 1024,
+            rdev: 0,
             permissions: "-rw-r--r--".to_string(),
             modified: SystemTime::now(),
             accessed: SystemTime::UNIX_EPOCH,

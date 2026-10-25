@@ -3,6 +3,37 @@ use chrono::format::{Item, StrftimeItems};
 use clap::{ArgAction, Parser, ValueEnum, ValueHint};
 use std::str::FromStr;
 
+/// Parses an enum value, accepting any unambiguous prefix as GNU ls does
+/// (`--sort=t` is `--sort=time`)
+pub fn enum_prefix<T: ValueEnum + Clone>(value: &str) -> Result<T, String> {
+    let variants = T::value_variants();
+    let mut hits: Vec<usize> = Vec::new();
+    for (i, v) in variants.iter().enumerate() {
+        let Some(pv) = v.to_possible_value() else {
+            continue;
+        };
+        if pv.get_name_and_aliases().any(|n| n == value) {
+            return Ok(v.clone());
+        }
+        if pv.get_name_and_aliases().any(|n| n.starts_with(value)) {
+            hits.push(i);
+        }
+    }
+    let names = || {
+        variants
+            .iter()
+            .filter_map(|v| v.to_possible_value())
+            .map(|p| p.get_name().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match hits.as_slice() {
+        [i] if !value.is_empty() => Ok(variants[*i].clone()),
+        [] => Err(format!("invalid argument '{value}' (valid: {})", names())),
+        _ => Err(format!("ambiguous argument '{value}' (valid: {})", names())),
+    }
+}
+
 /// Sort keys for directory listing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
 pub enum SortField {
@@ -167,6 +198,7 @@ pub enum Layout {
 /// Command-line arguments structure for eka
 #[derive(Parser, Debug, Default)]
 #[command(name = "eka", version, about = "A modern replacement for ls", long_about = None)]
+#[command(infer_long_args = true)]
 #[command(disable_help_flag = true)]
 pub struct Args {
     /// Print help
@@ -288,7 +320,7 @@ pub struct Args {
     pub sort_change: bool,
 
     /// Select the timestamp shown by -l and used by -t
-    #[arg(long = "time", value_enum, value_name = "WORD")]
+    #[arg(long = "time", value_parser = enum_prefix::<TimeField>, value_name = "WORD")]
     pub time: Option<TimeField>,
 
     /// Select the timestamp format used by -l
@@ -340,7 +372,7 @@ pub struct Args {
     pub show_control_chars: bool,
 
     /// Use quoting style WORD for entry names
-    #[arg(long = "quoting-style", value_enum, value_name = "WORD")]
+    #[arg(long = "quoting-style", value_parser = enum_prefix::<QuotingStyle>, value_name = "WORD")]
     pub quoting_style: Option<QuotingStyle>,
 
     /// Print the index number of each file
@@ -361,13 +393,13 @@ pub struct Args {
     pub no_deref: bool,
 
     /// Sort by WORD instead of name
-    #[arg(long, value_enum, value_name = "WORD")]
+    #[arg(long, value_parser = enum_prefix::<SortField>, value_name = "WORD")]
     pub sort: Option<SortField>,
 
     /// Colorize the output
     #[arg(
         long,
-        value_enum,
+        value_parser = enum_prefix::<ColorWhen>,
         value_name = "WHEN",
         num_args = 0..=1,
         require_equals = true,
@@ -778,5 +810,22 @@ mod tests {
             select_time_style(None, false, Some("bad")),
             TimeStyle::Locale
         );
+    }
+
+    #[test]
+    fn enum_values_accept_unambiguous_prefixes() {
+        assert_eq!(enum_prefix::<SortField>("t"), Ok(SortField::Time));
+        assert_eq!(enum_prefix::<SortField>("si"), Ok(SortField::Size));
+        assert_eq!(enum_prefix::<SortField>("none"), Ok(SortField::None));
+        assert!(enum_prefix::<SortField>("n").is_err());
+        assert!(enum_prefix::<SortField>("").is_err());
+        assert!(enum_prefix::<SortField>("zzz").is_err());
+        assert_eq!(enum_prefix::<ColorWhen>("al"), Ok(ColorWhen::Always));
+    }
+
+    #[test]
+    fn long_options_can_be_abbreviated() {
+        assert!(parse(&["--recurs"]).recursive);
+        assert_eq!(parse(&["--sort=t"]).sort, Some(SortField::Time));
     }
 }
