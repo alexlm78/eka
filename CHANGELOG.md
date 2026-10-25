@@ -7,6 +7,15 @@ change behavior.
 
 ## [Unreleased]
 
+### Changed
+
+- In a collating locale (`LC_ALL`, `LC_COLLATE` or `LANG` other than `C`,
+  `POSIX` or `C.*`) names sort ignoring case and accents, with punctuation
+  before digits before letters, as GNU ls does in a UTF-8 locale. The `C`
+  locale keeps the bytewise order.
+- `-X` compares from the last dot of the name, dot included, as GNU ls does,
+  so ".bashrc" has the extension ".bashrc".
+
 ### Added
 
 - `-f`, `--format`, `--file-type`, `--si`, `--indicator-style=none|file-type|classify`

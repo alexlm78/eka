@@ -2,7 +2,7 @@
 
 Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It aims to match `ls` in flags and output while improving memory use, speed and safety, and it adds color by default on terminals.
 
-> **Status:** v0.3.0, the first public release. It is not 1.0 yet: names sort bytewise (like GNU `ls` in the `C` locale, not in a UTF-8 locale), and a few GNU options are missing. See [Known differences](#known-differences-from-gnu-ls) and the [CHANGELOG](CHANGELOG.md).
+> **Status:** v0.3.0, the first public release. It is not 1.0 yet: names sort by an approximation of GNU `ls` collation (see [Known differences](#known-differences-from-gnu-ls)), and a few GNU options are missing. See [Known differences](#known-differences-from-gnu-ls) and the [CHANGELOG](CHANGELOG.md).
 
 ## Features
 
@@ -123,7 +123,7 @@ When several paths are given, files are listed first, then each directory under 
 | `--help` | Print help |
 | `-V`, `--version` | Print the version |
 
-Names are sorted bytewise (like `LC_ALL=C ls`), ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When several sort options are combined the order of precedence is `--sort`, `-U`, `-S`, `-t`, `-v`, `-X`.
+Names are sorted bytewise in the `C` locale (`LC_ALL=C`). In any other locale (`LC_ALL`, `LC_COLLATE` or `LANG`, in that order) they sort ignoring case and accents, with punctuation before digits before letters, as GNU `ls` does in a UTF-8 locale. Ties in size and time fall back to the name, and directories are not grouped first unless `--group-directories-first` is given. When several sort options are combined the order of precedence is `--sort`, `-U`, `-S`, `-t`, `-v`, `-X`.
 
 Patterns for `-I` and `--hide` support `*`, `?`, `[abc]`, `[a-z]`, `[!abc]` and `\` escapes, are matched against the whole name (a leading dot is not special) and never apply to paths named on the command line.
 
@@ -188,7 +188,7 @@ Eka is faster than the others on large flat listings and ties GNU ls on recursio
 
 - **Newlines in names:** with `--quoting-style=literal` or `shell` (and `-N`), eka prints a newline inside a name as `?`. GNU coreutils 9.4 prints it raw; newer versions print `?`. The escaping styles (`-b`, `-Q`, `shell-escape`, `c`, `escape`) are identical.
 - **Column fit:** eka lets the columns fill the width exactly (`total <= width`), as recent coreutils do. Older ones, such as Ubuntu's 9.4, need `total < width`, so at exact-fit widths they use one column fewer.
-- **Sort order:** names are compared bytewise, like GNU `ls` in the `C` locale. In a UTF-8 locale GNU `ls` sorts by collation rules (`apple Apple2 banana Banana2`, where eka prints `Apple2 Banana2 apple banana`), so listings of mixed-case names differ.
+- **Sort order:** in the `C` locale names compare bytewise, like GNU `ls`. In other locales eka approximates the GNU order: case and accents are ignored first, then accents and case (lowercase first) break ties. It matches GNU `ls` on Latin-script names, ASCII punctuation, digits and accented Latin-1 letters (checked against 300 random names). Other scripts and language-specific rules (such as Spanish `ch` or German `ß`) sort by code point.
 
 - Not implemented yet: `--author`, `--si`, `-D`, `-Z`.
 - Shell quoting always uses single quotes (`'it'\\''s'`), where GNU uses double quotes for a name with an apostrophe. The `locale` and `clocale` quoting styles are not implemented.

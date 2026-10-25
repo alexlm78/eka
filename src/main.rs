@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod cli;
+mod collate;
 mod colors;
 mod directory;
 mod formatter;
@@ -110,13 +111,13 @@ fn run(out: &mut impl Write, args: &Args) -> io::Result<i32> {
     let mut first = true;
 
     if !files.is_empty() {
-        directory::sort_entries(&mut files, args);
+        directory::sort_entries_with(&mut files, args, collate::enabled());
         print_entries(out, &fmt, &files, args)?;
         first = false;
     }
 
     // ls orders the directory operands with the same options as everything else
-    directory::sort_entries(&mut dirs, args);
+    directory::sort_entries_with(&mut dirs, args, collate::enabled());
 
     let mut had_error = false;
     for operand in &dirs {

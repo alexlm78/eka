@@ -134,7 +134,7 @@ Reverse the order while sorting, including ties.
 \fB\-\-sort\fR=\fIWORD\fR
 Sort by \fIWORD\fR instead of name: \fBnone\fR (directory order), \fBsize\fR, \fBtime\fR, \fBversion\fR, \fBextension\fR. When several sort options are given the order of precedence is \fB\-\-sort\fR, \fB\-U\fR, \fB\-S\fR, \fB\-t\fR, \fB\-v\fR, \fB\-X\fR.
 .PP
-Names are compared bytewise, as with \fBLC_ALL=C ls\fR. Ties in size and time are broken by name. Directories are not grouped first.
+Names are compared bytewise when the locale is \fBC\fR or \fBPOSIX\fR (\fBLC_ALL\fR, \fBLC_COLLATE\fR, then \fBLANG\fR). In any other locale they are compared ignoring case and accents, with punctuation before digits before letters, then by accents and case (lowercase first), as \fBls\fR does in a UTF-8 locale. Ties in size and time are broken by name. Directories are not grouped first.
 .SS "Time"
 .TP
 \fB\-\-time\fR=\fIWORD\fR

@@ -1,4 +1,5 @@
 use crate::cli::{Args, SortField};
+use crate::collate;
 use crate::glob;
 use crate::quoting::quote_for_message;
 use crate::types::FileEntry;
@@ -86,7 +87,7 @@ pub fn read_directory(
         }
     }
 
-    sort_entries(&mut file_entries, args);
+    sort_entries_with(&mut file_entries, args, collate::enabled());
     Ok(file_entries)
 }
 
@@ -226,13 +227,31 @@ pub fn read_directory_recursive(
     Ok(result)
 }
 
-/// Sorts entries per the CLI options. Names compare bytewise (C locale);
-/// size and time ties fall back to name, and -r reverses the whole order.
+/// Sorts entries per the CLI options with bytewise names (C locale)
+#[cfg(test)]
 pub fn sort_entries(entries: &mut [FileEntry], args: &Args) {
+    sort_entries_with(entries, args, false);
+}
+
+/// Sorts entries per the CLI options. Names compare bytewise, or by locale
+/// rules when `collate` is set; size and time ties fall back to name, and -r
+/// reverses the whole order.
+pub fn sort_entries_with(entries: &mut [FileEntry], args: &Args, collate: bool) {
+    use std::cmp::Reverse;
     let field = args.sort_field();
     let time = args.time_field();
 
-    if field != SortField::None {
+    if field != SortField::None && collate && field != SortField::Version {
+        let name = |e: &FileEntry| collate::key(e.name.as_bytes());
+        match field {
+            SortField::Size => entries.sort_by_cached_key(|e| (Reverse(e.size), name(e))),
+            SortField::Time => entries.sort_by_cached_key(|e| (Reverse(e.time(time)), name(e))),
+            SortField::Extension => {
+                entries.sort_by_cached_key(|e| (collate::key(extension(e)), name(e)));
+            }
+            _ => entries.sort_by_cached_key(name),
+        }
+    } else if field != SortField::None {
         entries.sort_by(|a, b| {
             let by_name = || a.name.as_bytes().cmp(b.name.as_bytes());
             match field {
@@ -301,11 +320,13 @@ pub fn version_cmp(a: &[u8], b: &[u8]) -> Ordering {
     a.cmp(b)
 }
 
-/// Bytes after the last dot of the name (empty when there is none)
+/// The name from its last dot on, dot included (empty when there is none), as
+/// GNU ls compares for -X; so ".bashrc" has the extension ".bashrc"
 fn extension(e: &FileEntry) -> &[u8] {
-    Path::new(&e.name)
-        .extension()
-        .map_or(&[][..], |x| x.as_bytes())
+    let name = e.name.as_bytes();
+    name.iter()
+        .rposition(|&b| b == b'.')
+        .map_or(&name[name.len()..], |i| &name[i..])
 }
 
 #[cfg(test)]
@@ -348,6 +369,28 @@ mod tests {
         let mut v = vec![entry("b", 0), entry("a", 0), entry("B", 0), entry("_x", 0)];
         sort_entries(&mut v, &Args::default());
         assert_eq!(names(&v), ["B", "_x", "a", "b"]);
+    }
+
+    #[test]
+    fn test_sort_by_name_in_a_collating_locale() {
+        let mut v = vec![
+            entry("b", 0),
+            entry("B", 0),
+            entry("a", 0),
+            entry("é", 0),
+            entry("e", 0),
+        ];
+        sort_entries_with(&mut v, &Args::default(), true);
+        assert_eq!(names(&v), ["a", "b", "B", "e", "é"]);
+        sort_entries_with(&mut v, &Args::default(), false);
+        assert_eq!(names(&v), ["B", "a", "b", "e", "é"]);
+    }
+
+    #[test]
+    fn test_extension_includes_the_dot_and_dotfiles() {
+        assert_eq!(extension(&entry("a.tar.gz", 0)), b".gz");
+        assert_eq!(extension(&entry(".bashrc", 0)), b".bashrc");
+        assert_eq!(extension(&entry("noext", 0)), b"");
     }
 
     #[test]

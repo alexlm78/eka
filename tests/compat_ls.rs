@@ -541,3 +541,40 @@ fn gnu_format_and_indicator_options_match() {
         ],
     );
 }
+
+/// Runs `program` in the fixture under a UTF-8 locale
+fn in_locale(program: &str, f: &Fixture, args: &[&str]) -> String {
+    let mut cmd = std::process::Command::new(program);
+    cmd.current_dir(f.root())
+        .args(args)
+        .env_clear()
+        .env("LC_ALL", "en_US.UTF-8")
+        .env("TZ", "UTC");
+    text(&cmd.output().unwrap().stdout)
+}
+
+#[test]
+fn gnu_locale_sort_order_matches() {
+    need_ls!();
+    if !system_ls_is_gnu() {
+        return;
+    }
+    let f = Fixture::new();
+    for name in [
+        "a", "B", "c", "é", "e", "ñ", "n", "_x", ".h", "1", "10", "2", "a_b", "a-b", "a.b", "ab",
+        "ab~", "Zed", "zed.txt", "b.tar.gz",
+    ] {
+        f.file(name, 1, day(1));
+    }
+    // Without the locale installed GNU ls sorts bytewise: nothing to compare
+    if in_locale(&ls_path(), &f, &["-1A"]) == text(&sys_ls(&f, &["-1A"]).stdout) {
+        return;
+    }
+    for args in [&["-1A"][..], &["-1Ar"], &["-1AX"], &["-1AS"], &["-1At"]] {
+        assert_eq!(
+            in_locale(EKA, &f, args),
+            in_locale(&ls_path(), &f, args),
+            "{args:?}"
+        );
+    }
+}
