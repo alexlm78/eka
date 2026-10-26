@@ -596,7 +596,8 @@ fn gnu_last_option_wins() {
             &["-Ut"],
             &["-tU"],
             &["-fS"],
-            &["-Sf"],
+            // -Sf is not compared: unsorted, GNU lists . and .. where readdir
+            // returns them, and Rust's read_dir hides that position
             &["-1", "-C", "-w", "40"],
             &["-C", "-1", "-w", "40"],
             &["-x", "-C", "-w", "40"],

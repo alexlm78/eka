@@ -59,6 +59,14 @@ jobs:
       - name: Audit Cargo.lock against the RustSec advisory database
         run: cargo audit
 
+  version:
+    name: version and changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the version has release notes
+        run: scripts/check-version.sh
+
   man:
     name: man page
     runs-on: ubuntu-latest

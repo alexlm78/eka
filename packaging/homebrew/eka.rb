@@ -8,7 +8,7 @@
 class Eka < Formula
   desc "Modern replacement for ls with GNU-compatible output"
   homepage "https://github.com/alexlm78/eka"
-  url "https://github.com/alexlm78/eka/archive/refs/tags/v0.4.0.tar.gz"
+  url "https://github.com/alexlm78/eka/archive/refs/tags/v0.5.5.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
   head "https://github.com/alexlm78/eka.git", branch: "main"

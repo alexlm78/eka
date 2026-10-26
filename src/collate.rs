@@ -1,8 +1,14 @@
 //! Locale-aware name ordering, an approximation of what GNU ls gets from
-//! `strcoll` in a UTF-8 locale. Names compare ignoring case and accents first
-//! (punctuation, then digits, then letters), and only ties are broken by
-//! accents, then case (lowercase first), then the raw bytes. In the `C` and
-//! `POSIX` locales names keep comparing bytewise.
+//! `strcoll` in a UTF-8 locale. Names compare ignoring case and accents first,
+//! and only ties are broken by accents, then case (lowercase first), then the
+//! raw bytes. In the `C` and `POSIX` locales names keep comparing bytewise.
+//!
+//! Two models, because the C libraries differ:
+//! - macOS: punctuation sorts before digits, digits before letters.
+//! - glibc (Linux): punctuation is ignored at first, so `.h` sorts as `h`; only
+//!   after the letters, accents and case tie does the punctuation decide, in
+//!   the order of `GLIBC_PUNCTUATION`, with a name that has punctuation before
+//!   the same name without it at that position (`-a` < `a`, `a` < `a-`).
 
 use std::sync::OnceLock;
 
@@ -22,12 +28,48 @@ const FOLDS: [(char, &str); 8] = [
     ('y', "ýÿŷ"),
 ];
 
+/// Order of ASCII punctuation in glibc's `en_US.UTF-8`, measured on Ubuntu 24.04
+const GLIBC_PUNCTUATION: &str = "$ !\"#%&'()*+,-.:;<=>?@[\\]^_`{|}~";
+
+/// Accented forms per base letter in glibc's order (acute, grave, breve,
+/// circumflex, caron, ring, diaeresis, ...); the base letter itself sorts first
+const GLIBC_FOLDS: [(char, &str); 8] = [
+    ('a', "áàăâåäãąā"),
+    ('c', "ćĉčċç"),
+    ('e', "éèĕêěëėęē"),
+    ('i', "íìĭîïĩįīı"),
+    ('n', "ńňñņ"),
+    ('o', "óòŏôöőõøō"),
+    ('u', "úùŭûůüűũųū"),
+    ('y', "ýŷÿ"),
+];
+
+/// Which C library's ordering to follow
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Model {
+    Macos,
+    Glibc,
+}
+
+impl Model {
+    /// The model of the platform eka runs on
+    pub const fn native() -> Self {
+        if cfg!(target_os = "macos") {
+            Model::Macos
+        } else {
+            Model::Glibc
+        }
+    }
+}
+
 /// Sort key: comparing keys with `Ord` gives the collation order
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CollationKey {
     base: Vec<u32>,
     accents: Vec<u8>,
     case: Vec<u8>,
+    /// glibc only: the punctuation and letters as a last-level sequence
+    tail: Vec<u32>,
     raw: Vec<u8>,
 }
 
@@ -49,13 +91,26 @@ fn is_collating(locale: &str) -> bool {
 }
 
 pub fn key(name: &[u8]) -> CollationKey {
+    key_with(name, Model::native())
+}
+
+pub fn key_with(name: &[u8], model: Model) -> CollationKey {
     let text = String::from_utf8_lossy(name);
     let mut base = Vec::with_capacity(text.len());
     let mut accents = Vec::with_capacity(text.len());
     let mut case = Vec::with_capacity(text.len());
+    let mut tail = Vec::new();
     for c in text.chars() {
         let lower = c.to_lowercase().next().unwrap_or(c);
-        let (letter, accent) = fold(lower);
+        if model == Model::Glibc {
+            if !c.is_alphanumeric() {
+                // Ignored at the first levels
+                tail.push(glibc_punctuation(c));
+                continue;
+            }
+            tail.push(1000);
+        }
+        let (letter, accent) = fold(lower, model);
         base.push(primary(letter));
         accents.push(accent);
         case.push(u8::from(lower != c));
@@ -64,18 +119,32 @@ pub fn key(name: &[u8]) -> CollationKey {
         base,
         accents,
         case,
+        tail,
         raw: name.to_vec(),
     }
 }
 
+/// Last-level weight of a character that is not a letter or a digit
+fn glibc_punctuation(c: char) -> u32 {
+    GLIBC_PUNCTUATION
+        .chars()
+        .position(|p| p == c)
+        .map_or(100 + c as u32 % 800, |i| 1 + i as u32)
+}
+
 /// Base letter of an accented lowercase letter and its accent rank
-fn fold(c: char) -> (char, u8) {
+fn fold(c: char, model: Model) -> (char, u8) {
     if c.is_ascii() {
         return (c, 0);
     }
-    for (base, accented) in FOLDS {
+    let table = if model == Model::Glibc {
+        &GLIBC_FOLDS
+    } else {
+        &FOLDS
+    };
+    for (base, accented) in table {
         if let Some(i) = accented.chars().position(|a| a == c) {
-            return (base, i as u8 + 1);
+            return (*base, i as u8 + 1);
         }
     }
     (c, 0)
@@ -103,35 +172,73 @@ fn primary(c: char) -> u32 {
 mod tests {
     use super::*;
 
-    fn sorted(names: &[&str]) -> Vec<String> {
+    fn sorted(model: Model, names: &[&str]) -> Vec<String> {
         let mut v: Vec<&str> = names.to_vec();
-        v.sort_by_cached_key(|n| key(n.as_bytes()));
+        v.sort_by_cached_key(|n| key_with(n.as_bytes(), model));
         v.into_iter().map(String::from).collect()
     }
 
     #[test]
-    fn matches_gnu_ls_in_a_utf8_locale() {
-        // Orders observed from GNU ls 9.12 with LC_ALL=en_US.UTF-8
+    fn macos_model_puts_punctuation_before_digits() {
+        // Orders observed from GNU ls 9.12 on macOS with LC_ALL=en_US.UTF-8
         assert_eq!(
-            sorted(&[
-                "B", "a", "c", "é", "e", "ñ", "n", "z", "10", "2", "1", "_x", ".h"
-            ]),
+            sorted(
+                Model::Macos,
+                &[
+                    "B", "a", "c", "é", "e", "ñ", "n", "z", "10", "2", "1", "_x", ".h"
+                ]
+            ),
             [
                 "_x", ".h", "1", "10", "2", "a", "B", "c", "e", "é", "n", "ñ", "z"
             ]
         );
         assert_eq!(
-            sorted(&["ab~", "ab", "a.b", "a-b", "a_b", "b", "a"]),
+            sorted(Model::Macos, &["ab~", "ab", "a.b", "a-b", "a_b", "b", "a"]),
             ["a", "a_b", "a-b", "a.b", "ab", "ab~", "b"]
         );
     }
 
     #[test]
-    fn ties_break_by_accent_then_case_then_bytes() {
+    fn glibc_model_ignores_punctuation_first() {
+        // Orders observed from GNU ls 9.4 on Ubuntu 24.04 (glibc 2.39)
         assert_eq!(
-            sorted(&["É", "B", "é", "b", "E", "e"]),
-            ["b", "B", "e", "E", "é", "É"]
+            sorted(
+                Model::Glibc,
+                &["x", "_x", "h", ".h", "f", "1", "10", "2", "e", "é"]
+            ),
+            ["1", "10", "2", "e", "é", "f", ".h", "h", "_x", "x"]
         );
+        assert_eq!(
+            sorted(
+                Model::Glibc,
+                &[
+                    "a_b", "a-b", "a.b", "a b", "ab", "ab ", "ab~", "aB", "Ab", "A", "a", "a-"
+                ]
+            ),
+            [
+                "a", "a-", "A", "a b", "a-b", "a.b", "a_b", "ab", "ab ", "ab~", "aB", "Ab"
+            ]
+        );
+        assert_eq!(
+            sorted(Model::Glibc, &["a", "-a", ".a", "_a", "a-", "a.", "a_"]),
+            ["-a", ".a", "_a", "a", "a-", "a.", "a_"]
+        );
+        // Accents in glibc's order: acute, grave, breve, circumflex, ring, diaeresis
+        assert_eq!(
+            sorted(Model::Glibc, &["ä", "å", "â", "ă", "à", "á", "a"]),
+            ["a", "á", "à", "ă", "â", "å", "ä"]
+        );
+    }
+
+    #[test]
+    fn ties_break_by_accent_then_case_then_bytes() {
+        for model in [Model::Macos, Model::Glibc] {
+            assert_eq!(
+                sorted(model, &["É", "B", "é", "b", "E", "e"]),
+                ["b", "B", "e", "E", "é", "É"],
+                "{model:?}"
+            );
+        }
     }
 
     #[test]

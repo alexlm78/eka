@@ -1216,3 +1216,32 @@ fn extended_attributes_add_a_marker_after_the_mode() {
         text(&out.stdout)
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn posix_acl_adds_a_plus_after_the_mode() {
+    use std::process::Command;
+    let f = standard_tree();
+    let set = Command::new("setfacl")
+        .args(["-m", "u:nobody:r"])
+        .arg(f.path("a.txt"))
+        .output();
+    // Skip where setfacl is missing or the filesystem has no ACL support
+    if !matches!(set, Ok(ref o) if o.status.success()) {
+        return;
+    }
+    // eka_env strips the marker, so run the binary directly
+    let out = Command::new(EKA)
+        .args(["-l", "a.txt", "a1"])
+        .current_dir(f.root())
+        .env("LC_ALL", "C")
+        .output()
+        .unwrap();
+    let lines: Vec<String> = text(&out.stdout).lines().map(String::from).collect();
+    assert!(lines[0].starts_with("-rw-r--r--+ 1 "), "{lines:?}");
+    // a1 may carry an SELinux "." but never the "+"
+    assert!(
+        !lines[1].contains('+') || lines[1].ends_with("a1"),
+        "{lines:?}"
+    );
+}

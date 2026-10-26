@@ -1,199 +1,105 @@
-# Eka Roadmap - Complete `ls` Replacement
+# Eka roadmap: a complete `ls` replacement
 
-This document outlines the development roadmap to transform Eka into a fully functional replacement for the traditional `ls` command.
+Eka aims to be a drop-in replacement for GNU `ls` on macOS and Linux: the same
+options, the same output, the same exit status. This file tracks what is done,
+what is left, and the rules the project follows. The day-to-day record of
+changes is [CHANGELOG.md](../CHANGELOG.md).
 
-## Current Status
+## Versioning
 
-### Implemented Features ✅
+- Every commit that changes eka takes the next **odd** patch number
+  (0.5.5, 0.5.7, 0.5.9, ...). Even numbers are not used.
+- The commit also adds a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`
+  and updates `Cargo.toml` and `Cargo.lock`. The release workflow stops when
+  the tag does not match `Cargo.toml` or the version has no notes, so every
+  commit stays releasable.
+- `scripts/check-version.sh` enforces this in CI. A release is a tag `vX.Y.Z`
+  on the commit that has that version.
+- Until 1.0.0, minor versions may change behavior.
 
-| Feature | Status | Priority |
-|---------|--------|----------|
-| Short format listing | ✅ Complete | - |
-| Long format listing (`-l`) | ✅ Complete | - |
-| Color-coded output by file type | ✅ Complete | - |
-| Hidden files support (`-a`) | ✅ Complete | - |
-| Directory-only listing (`-d`) | ✅ Complete | - |
-| Human-readable sizes (`-H`) | ✅ Complete | - |
-| Alphabetical sorting | ✅ Complete | - |
-| Directories-first sorting | ✅ Complete | - |
-| Permission display | ✅ Complete | - |
-| File size display | ✅ Complete | - |
-| Modification date display | ✅ Complete | - |
+## Where eka stands
 
-### Missing Features (Priority Order)
+Done and checked against GNU coreutils 9.x and the BSD `ls`:
 
-## Phase 1: Core Functionality Enhancements
+- Every common option: `-1 -a -A -B -b -C -c -d -F -f -G -g -H -h -I -i -k -L
+  -l -m -N -n -o -P -p -Q -q -R -r -S -s -T -t -U -u -v -w -x -X`, and the long
+  options `--block-size --color --completions --file-type --format
+  --full-time --group-directories-first --hide --indicator-style
+  --quoting-style --show-control-chars --si --sort --time --time-style`.
+- The last option wins when options compete, as in GNU `ls`.
+- Locale-aware name order (macOS model), device numbers, extended-attribute
+  and ACL markers, `LS_COLORS`, `QUOTING_STYLE`, `TIME_STYLE`, safe output on a
+  terminal, no `unsafe` code.
+- Man page, shell completions (bash, zsh, fish), release archives with
+  provenance attestations, a Homebrew formula template.
 
-### 1.1 Additional Flags (High Priority)
+## Phase 0: stabilize (blocks the rest)
 
-| Flag | Description | Status |
-|------|-------------|--------|
-| `-1` | One file per line | 🔲 TODO |
-| `-C` | Multi-column output (default) | 🔲 TODO |
-| `-F` | Classify indicators (*/=>@\|) | 🔲 TODO |
-| `-R` | Recursive subdirectory listing | 🔲 TODO |
-| `-S` | Sort by file size | 🔲 TODO |
-| `-t` | Sort by modification time | 🔲 TODO |
-| `-u` | Sort by access time | 🔲 TODO |
-| `-c` | Sort by change time | 🔲 TODO |
-| `--sort=WORD` | Sort by extension/version/size/status | 🔲 TODO |
-| `--reverse` | Reverse sort order | 🔲 TODO |
-| `-i` | Print inode number | 🔲 TODO |
-| `-n` | Numeric UIDs/GIDs | 🔲 TODO |
-| `-g` | Long format without owner | 🔲 TODO |
-| `-o` | Long format without group | 🔲 TODO |
-| `-p` | Append file type indicator | 🔲 TODO |
-| `-q` | Hide control characters | 🔲 TODO |
-| `-b` | Escape non-graphic characters | 🔲 TODO |
-| `-N` | Print raw entry names | 🔲 TODO |
-| `-k` | Use 1024-byte blocks (default) | 🔲 TODO |
-| `--block-size=SIZE` | Scale sizes by SIZE | 🔲 TODO |
-| `--time=WORD` | Show time as WORD | 🔲 TODO |
-| `--time-style=STYLE` | Time/date format | 🔲 TODO |
+CI must be green on Linux and macOS before anything new lands.
 
-### 1.2 Output Enhancements
+- [x] Format, lock file and version fixes.
+- [ ] Name order on Linux. glibc ignores punctuation at the first level, so
+      `.h` sorts as `h`; the current model follows macOS. Take the reference
+      from Ubuntu's `ls`, fit a glibc model, and fall back to ICU4X
+      (`icu_collator`) if it cannot reach 99% agreement on the random corpus.
+- [ ] `-U`/`-f` list `.` and `..` where `readdir` returns them; eka puts them
+      first. Not fixable with Rust's `read_dir`: drop them from the comparison
+      tests and document it.
+- [ ] Linux-only paths that CI has never run: POSIX ACL `+`, device numbers,
+      `--time=birth`.
+- [x] Version check in CI (`scripts/check-version.sh`).
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| File type indicators | Append `*` for executables, `/` for dirs, etc. | 🔲 TODO |
-| Inode numbers | Display inode in long format | 🔲 TODO |
-| Block counts | Display total block count | 🔲 TODO |
-| Symbolic link handling | Show -> target for symlinks | 🔲 TODO |
-| Broken symlink detection | Handle broken symlinks gracefully | 🔲 TODO |
+## Phase 1: release 0.5.5
 
-## Phase 2: Advanced Features
+- [ ] Move the `v0.5.5` tag to the commit that has the changelog section.
+- [ ] Publish the Homebrew tap (`alexlm78/homebrew-eka`), run
+      `scripts/update-formula.sh 0.5.5`, check `brew install` on macOS and
+      Linux.
 
-### 2.1 Extended Attributes
+## Phase 2: fidelity with GNU `ls`
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Extended flags | `--author`, `--width`, etc. | 🔲 TODO |
-| File ownership | Owner/group name resolution | 🔲 TODO |
-| ACL indicators | Show + for ACL | 🔲 TODO |
-| SELinux context | Display SELinux context | 🔲 TODO |
+In order of value:
 
-### 2.2 Performance
+1. `LSCOLORS`, `CLICOLOR` and `CLICOLOR_FORCE` (macOS), and the color of a
+   symbolic link's target in `-l`. Decide whether the palette without
+   `LS_COLORS` follows the GNU defaults.
+2. Quoting: double quotes for names with an apostrophe in the shell styles,
+   and the `locale` and `clocale` styles.
+3. Small options: `--author`, `--sort=width`, `--zero`, `--hyperlink`.
+4. Display width of wide (CJK) and combining characters in the column layouts.
+5. Timestamps: the six-month window, future dates, and the `locale` style in
+   locales other than `C`.
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Parallel directory reading | Use rayon for concurrent I/O | 🔲 TODO |
-| Caching | Cache directory contents | 🔲 TODO |
-| Lazy loading | Defer expensive operations | 🔲 TODO |
+## Phase 3: platform parity
 
-### 2.3 Sorting Enhancements
+- [ ] `-Z`, `--context` on Linux (SELinux context, read with `xattr`).
+- Out of scope unless requested: macOS ACL `+` (needs `unsafe` or a heavy
+  dependency for one character), `--dired` and `-D` (Emacs only).
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Version sorting | Natural sort of numbers in strings | 🔲 TODO |
-| Extension sorting | Group by file extension | 🔲 TODO |
-| Multiple sort keys | Sort by size then name | 🔲 TODO |
+## Phase 4: robustness
 
-## Phase 3: User Experience
+- [ ] A nightly differential job: random trees and random option sets against
+      `gls` on macOS and coreutils on Ubuntu.
+- [ ] Parity of error messages and exit status (permissions, `--`, loops).
+- [ ] Benchmarks against `ls` and `eza` on 100,000 files; parallelize only
+      what measures slower.
+- [ ] A locale that is set but not installed falls back to `C`, as in GNU.
+- [ ] Property tests on `quoting`: no raw control character reaches a terminal.
 
-### 3.1 Configuration
+## Phase 5: distribution and documentation
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Configuration file | `~/.ekarc` | 🔲 TODO |
-| Environment variables | `EKA_COLOR`, `EKA_SORT`, etc. | 🔲 TODO |
-| Theme support | Multiple color schemes | 🔲 TODO |
+- [ ] Publish on crates.io (check that the name is free).
+- [ ] Static musl build, `.deb` and `.rpm` packages, an AUR `PKGBUILD`.
+- [ ] Refresh `docs/eka-architecture.md` (modules `collate`, `attrs`, the
+      option resolution in `cli`) and add a migration guide (`alias ls=eka`).
 
-### 3.2 Interactive Features
+## Criteria for 1.0.0
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Directory navigation | cd, pushd/popd support | 🔲 TODO |
-| File selection | Interactive file selection | 🔲 TODO |
-| Quick preview | Preview file details | 🔲 TODO |
+- Every known difference from GNU `ls` is fixed or listed as intentional.
+- The nightly differential job has been clean for several weeks.
+- CI is green on macOS and Linux, and the command line is stable.
 
-### 3.3 Aliases and Shortcuts
+## Known differences
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Built-in aliases | la=eka -a, l=eka -l, etc. | 🔲 TODO |
-| Custom aliases | User-defined shortcuts | 🔲 TODO |
-
-## Phase 4: Platform Integration
-
-### 4.1 System Integration
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| macOS support | Native macOS integration | 🔲 TODO |
-| Linux support | Full Linux support | 🔲 TODO |
-| Windows support | Windows compatibility | 🔲 TODO |
-| BSD support | FreeBSD/OpenBSD support | 🔲 TODO |
-
-### 4.2 Terminal Integration
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| True color support | 24-bit color support | 🔲 TODO |
-| Terminal detection | Auto-detect terminal capabilities | 🔲 TODO |
-| Mouse support | Click to navigate | 🔲 TODO |
-| Unicode support | Full Unicode handling | 🔲 TODO |
-
-## Phase 5: Testing and Documentation
-
-### 5.1 Testing
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Unit tests | Core functionality tests | 🔲 TODO |
-| Integration tests | End-to-end testing | 🔲 TODO |
-| Property-based tests | Fuzz testing | 🔲 TODO |
-| Cross-platform CI | CI/CD pipeline | 🔲 TODO |
-| Benchmarking | Performance benchmarks | 🔲 TODO |
-
-### 5.2 Documentation
-
-| Feature | Description | Status |
-|---------|-------------|--------|
-| Man page | Unix man page | 🔲 TODO |
-| Built-in help | `--help` enhancement | 🔲 TODO |
-| Examples | Usage examples | 🔲 TODO |
-| FAQ | Frequently asked questions | 🔲 TODO |
-
-## Implementation Priorities
-
-### Immediate (v0.2.0)
-1. Add missing basic flags (-1, -F, -R, -S, -t)
-2. Fix sorting by size/time
-3. Add inode display
-4. Fix symlink handling
-
-### Short-term (v0.3.0)
-1. Configuration file support
-2. Extended attributes
-3. Performance optimization
-
-### Medium-term (v0.4.0)
-1. Interactive mode
-2. Theme support
-3. Full cross-platform support
-
-### Long-term (v1.0.0)
-1. Complete feature parity with GNU ls
-2. Stability and testing
-3. Release production version
-
-## Comparison with GNU ls
-
-| Feature | GNU ls | Eka Target |
-|---------|--------|------------|
-| Basic listing | ✅ | ✅ (Complete) |
-| Color support | ✅ (with LS_COLORS) | ✅ (Complete) |
-| Long format | ✅ | ✅ (Complete) |
-| All flags | ✅ 60+ | 🔲 ~10 |
-| Recursive | ✅ | 🔲 TODO |
-| Sorting options | ✅ 8 types | 🔲 2 types |
-| Configuration | Environment vars | 🔲 TODO |
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## References
-
-- [GNU Coreutils ls](https://www.gnu.org/software/coreutils/manual/html_node/ls-invocation.html)
-- [POSIX ls specification](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/ls.html)
+Listed in the [README](../README.md#known-differences-from-gnu-ls); this file
+only schedules the work.

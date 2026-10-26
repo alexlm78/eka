@@ -177,10 +177,11 @@ pub fn eka(f: &Fixture, args: &[&str]) -> Output {
     eka_env(f, args, &[])
 }
 
-/// macOS tags files with attributes such as com.apple.provenance, which cannot
-/// be removed, so `ls -l` prints `@` after the mode. Expected listings are
-/// written without the marker; this takes it out. Tests of the marker itself
-/// run the binary directly.
+/// `ls -l` prints a marker after the mode when the file has extended
+/// attributes (`@`, and macOS tags every file with com.apple.provenance), a
+/// POSIX ACL (`+`) or an SELinux context (`.`). Expected listings are written
+/// without it, so this takes it out. Tests of the markers themselves run the
+/// binary directly.
 pub fn strip_attribute_marker(bytes: Vec<u8>) -> Vec<u8> {
     let is_mode = |m: &[u8]| {
         m.len() == 10
@@ -189,7 +190,11 @@ pub fn strip_attribute_marker(bytes: Vec<u8>) -> Vec<u8> {
     };
     let mut out = Vec::with_capacity(bytes.len());
     for (i, &b) in bytes.iter().enumerate() {
-        if b == b'@' && i >= 10 && is_mode(&bytes[i - 10..i]) {
+        if b"@.+".contains(&b)
+            && i >= 10
+            && is_mode(&bytes[i - 10..i])
+            && bytes.get(i + 1) == Some(&b' ')
+        {
             continue;
         }
         out.push(b);
@@ -204,9 +209,7 @@ pub fn eka_env(f: &Fixture, args: &[&str], env: &[(&str, &str)]) -> Output {
         cmd.env(k, v);
     }
     let mut output = cmd.output().unwrap();
-    if cfg!(target_os = "macos") {
-        output.stdout = strip_attribute_marker(output.stdout);
-    }
+    output.stdout = strip_attribute_marker(output.stdout);
     output
 }
 
@@ -219,7 +222,9 @@ pub fn ls_path() -> String {
 pub fn sys_ls(f: &Fixture, args: &[&str]) -> Output {
     let mut cmd = clean_command(&ls_path(), f.root());
     cmd.args(args);
-    cmd.output().unwrap()
+    let mut output = cmd.output().unwrap();
+    output.stdout = strip_attribute_marker(output.stdout);
+    output
 }
 
 pub fn has_system_ls() -> bool {

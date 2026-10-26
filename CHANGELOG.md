@@ -5,7 +5,11 @@ All notable changes to eka are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0.0, minor versions may
 change behavior.
 
-## [Unreleased]
+## [0.5.5] - 2026-10-24
+
+The first release after 0.3.0; the version numbers in between were skipped
+(the 0.5.3 tag never produced a release). From here on every commit that
+changes eka takes the next odd patch number and its own section in this file.
 
 ### Added
 
@@ -30,8 +34,10 @@ change behavior.
 
 - In a collating locale (`LC_ALL`, `LC_COLLATE` or `LANG` other than `C`,
   `POSIX` or `C.*`) names sort ignoring case and accents, with punctuation
-  before digits before letters, as GNU ls does in a UTF-8 locale. The `C`
-  locale keeps the bytewise order.
+  before digits before letters, as the system ls does on macOS. On Linux the
+  order follows glibc: punctuation is ignored first and only breaks ties.
+  The `C` locale keeps the bytewise order. Rare symbols and letters such as
+  `ß`, `æ` and `ø` may still sort differently from glibc.
 - `-X` compares from the last dot of the name, dot included, as GNU ls does,
   so ".bashrc" has the extension ".bashrc".
 
