@@ -29,7 +29,7 @@ const FOLDS: [(char, &str); 8] = [
 ];
 
 /// Order of ASCII punctuation in glibc's `en_US.UTF-8`, measured on Ubuntu 24.04
-const GLIBC_PUNCTUATION: &str = "$ !\"#%&'()*+,-.:;<=>?@[\\]^_`{|}~";
+const GLIBC_PUNCTUATION: &str = " !\"#%&'()*+,-.:;<=>?@[\\]^_`{|}~";
 
 /// Accented forms per base letter in glibc's order (acute, grave, breve,
 /// circumflex, caron, ring, diaeresis, ...); the base letter itself sorts first
@@ -100,11 +100,12 @@ pub fn key_with(name: &[u8], model: Model) -> CollationKey {
     let mut accents = Vec::with_capacity(text.len());
     let mut case = Vec::with_capacity(text.len());
     let mut tail = Vec::new();
-    for c in text.chars() {
+    for (c, extra) in expand(&text, model) {
         let lower = c.to_lowercase().next().unwrap_or(c);
         if model == Model::Glibc {
-            if !c.is_alphanumeric() {
-                // Ignored at the first levels
+            if !c.is_alphanumeric() && c != '$' {
+                // Ignored at the first levels; `$` is the exception, it has
+                // a primary weight below the digits
                 tail.push(glibc_punctuation(c));
                 continue;
             }
@@ -112,7 +113,7 @@ pub fn key_with(name: &[u8], model: Model) -> CollationKey {
         }
         let (letter, accent) = fold(lower, model);
         base.push(primary(letter));
-        accents.push(accent);
+        accents.push(accent.max(extra));
         case.push(u8::from(lower != c));
     }
     CollationKey {
@@ -122,6 +123,25 @@ pub fn key_with(name: &[u8], model: Model) -> CollationKey {
         tail,
         raw: name.to_vec(),
     }
+}
+
+/// The characters to weigh, each with an accent rank that is added to the
+/// character's own. glibc spells out ligatures (`æ` sorts as `ae`) and ranks
+/// them after every accented form of the same letters.
+fn expand(text: &str, model: Model) -> Vec<(char, u8)> {
+    const LIGATURE: u8 = 99;
+    let mut out = Vec::with_capacity(text.len());
+    for c in text.chars() {
+        match (model, c) {
+            (Model::Glibc, 'æ') => out.extend([('a', LIGATURE), ('e', 0)]),
+            (Model::Glibc, 'Æ') => out.extend([('A', LIGATURE), ('E', 0)]),
+            (Model::Glibc, 'œ') => out.extend([('o', LIGATURE), ('e', 0)]),
+            (Model::Glibc, 'Œ') => out.extend([('O', LIGATURE), ('E', 0)]),
+            (Model::Glibc, 'ß') => out.extend([('s', LIGATURE), ('s', 0)]),
+            _ => out.push((c, 0)),
+        }
+    }
+    out
 }
 
 /// Last-level weight of a character that is not a letter or a digit
@@ -239,6 +259,19 @@ mod tests {
                 "{model:?}"
             );
         }
+    }
+
+    #[test]
+    fn glibc_model_weighs_dollar_and_ligatures() {
+        // Orders observed from GNU ls 9.4 on Ubuntu 24.04, LANG=en_US.UTF-8
+        assert_eq!(
+            sorted(Model::Glibc, &["a", "1", "$", "-", "$a", "b"]),
+            ["-", "$", "$a", "1", "a", "b"]
+        );
+        assert_eq!(
+            sorted(Model::Glibc, &["æ", "b", "aÉ", "ad", "af"]),
+            ["ad", "aÉ", "æ", "af", "b"]
+        );
     }
 
     #[test]

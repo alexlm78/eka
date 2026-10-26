@@ -5,6 +5,21 @@ All notable changes to eka are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0.0, minor versions may
 change behavior.
 
+## [0.5.7] - 2026-10-26
+
+### Fixed
+
+- On Linux, names with `$` now sort as glibc does: `$` is not ignored like the
+  other punctuation, it weighs less than the digits.
+- On Linux, `æ`, `œ` and `ß` sort as `ae`, `oe` and `ss`, after the accented
+  forms of the same letters.
+
+### Changed
+
+- Known difference: when two names have the same letters and digits and differ
+  only in punctuation and accents or case, glibc may order them differently
+  (3 pairs in a 900-name test with random symbols).
+
 ## [0.5.5] - 2026-10-24
 
 The first release after 0.3.0; the version numbers in between were skipped
