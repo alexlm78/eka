@@ -1,13 +1,15 @@
 [package]
-name = "eka"
-version = "0.5.7"
+name = "eka-ls"
+version = "0.5.9"
 edition = "2024"
 rust-version = "1.88"
-description = "A modern replacement for ls with colors"
+description = "A modern replacement for ls with GNU-compatible output (installs the eka command)"
 authors = ["Eka Contributors"]
 license = "MIT"
 repository = "https://github.com/alexlm78/eka"
 readme = "README.md"
+keywords = ["ls", "cli", "coreutils", "terminal", "filesystem"]
+categories = ["command-line-utilities", "filesystem"]
 
 [build-dependencies]
 

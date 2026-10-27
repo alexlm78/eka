@@ -5,6 +5,21 @@ All notable changes to eka are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0.0, minor versions may
 change behavior.
 
+## [0.5.9] - 2026-10-26
+
+### Added
+
+- eka is published as the `eka-ls` crate (`cargo install eka-ls`) and in a
+  Homebrew tap (`brew tap alexlm78/tap && brew install eka-ls`). Both install the
+  `eka` command. The release workflow publishes them after the GitHub release.
+
+### Changed
+
+- The package is named `eka-ls` because `eka` is taken on crates.io. The
+  command is still `eka`.
+- The Homebrew formula installs the release binaries instead of building from
+  source; `scripts/update-formula.sh` now fills a template from `SHA256SUMS`.
+
 ## [0.5.7] - 2026-10-26
 
 ### Fixed

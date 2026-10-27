@@ -1,0 +1,48 @@
+# typed: strict
+# frozen_string_literal: true
+
+# Template of the Homebrew formula for eka-ls. The release workflow fills the
+# @...@ fields with scripts/update-formula.sh and pushes the result to
+# Formula/eka-ls.rb in alexlm78/homebrew-tap. The program installs as `eka`.
+class EkaLs < Formula
+  desc "Modern replacement for ls with GNU-compatible output"
+  homepage "https://github.com/alexlm78/eka"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/alexlm78/eka/releases/download/v@VERSION@/eka-@VERSION@-aarch64-apple-darwin.tar.gz"
+      sha256 "@SHA_AARCH64_APPLE_DARWIN@"
+    end
+    on_intel do
+      url "https://github.com/alexlm78/eka/releases/download/v@VERSION@/eka-@VERSION@-x86_64-apple-darwin.tar.gz"
+      sha256 "@SHA_X86_64_APPLE_DARWIN@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/alexlm78/eka/releases/download/v@VERSION@/eka-@VERSION@-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_AARCH64_UNKNOWN_LINUX_GNU@"
+    end
+    on_intel do
+      url "https://github.com/alexlm78/eka/releases/download/v@VERSION@/eka-@VERSION@-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "@SHA_X86_64_UNKNOWN_LINUX_GNU@"
+    end
+  end
+
+  def install
+    bin.install "eka"
+    man1.install "eka.1"
+    bash_completion.install "completions/eka.bash" => "eka"
+    zsh_completion.install "completions/_eka"
+    fish_completion.install "completions/eka.fish"
+  end
+
+  test do
+    (testpath/"a.txt").write("x")
+    assert_match version.to_s, shell_output("#{bin}/eka --version")
+    assert_equal "a.txt\n", shell_output("#{bin}/eka -1 #{testpath}")
+  end
+end

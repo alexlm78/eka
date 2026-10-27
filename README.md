@@ -20,12 +20,20 @@ Eka is a drop-in replacement for the GNU/POSIX `ls` command, written in Rust. It
 
 ### Homebrew
 
-The formula builds from source and installs the man page and the completions for bash, zsh and fish. It lives in `packaging/homebrew/eka.rb`; publish it in a tap (a repository named `homebrew-eka`) and install with:
+```bash
+brew tap alexlm78/tap
+brew install eka-ls
+```
+
+The formula installs the `eka` command, its man page and the completions for bash, zsh and fish.
+
+### Cargo
 
 ```bash
-brew tap alexlm78/eka
-brew install eka
+cargo install eka-ls
 ```
+
+The crate is called `eka-ls` because `eka` is taken on crates.io; the command it installs is `eka`.
 
 ### From a release
 
@@ -54,7 +62,7 @@ cargo build --release
 cargo install --path .
 
 # Or install straight from GitHub, without cloning
-cargo install --git https://github.com/alexlm78/eka
+cargo install --git https://github.com/alexlm78/eka   # installs eka-ls
 
 # Install the man page (optional)
 ./install-manpage.sh

@@ -51,10 +51,10 @@ CI must be green on Linux and macOS before anything new lands.
 
 ## Phase 1: release 0.5.5
 
-- [ ] Move the `v0.5.5` tag to the commit that has the changelog section.
-- [ ] Publish the Homebrew tap (`alexlm78/homebrew-eka`), run
-      `scripts/update-formula.sh 0.5.5`, check `brew install` on macOS and
-      Linux.
+- [x] Release 0.5.5 on GitHub.
+- [ ] First release that publishes `eka-ls` to crates.io and the Homebrew tap
+      (`alexlm78/homebrew-tap`); check `brew install eka-ls` on macOS and
+      Linux, and `cargo install eka-ls`.
 
 ## Phase 2: fidelity with GNU `ls`
 
