@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="eka">
+  <title>eka</title>
+  <rect width="64" height="64" rx="14" fill="#0b1114"/>
+  <path d="M19 29H45M45 29A13 13 0 1 0 41.9 37.4" fill="none" stroke="#22d3ee" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="22" y="49" width="20" height="4.5" rx="2.25" fill="#4ade80"/>
+</svg>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eka – a modern ls replacement</title>
+<meta name="description" content="eka is a drop-in replacement for GNU/POSIX ls, written in Rust. Same flags, same output, faster, safer, with color by default. Install with cargo install eka-ls or brew install eka-ls.">
+<meta property="og:title" content="eka – a modern ls replacement">
+<meta property="og:description" content="Drop-in GNU ls replacement in Rust. Faster on large listings, safe output, color by default.">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="logo.svg" alt="" width="26" height="26">eka<span>_</span></a>
+    <nav aria-label="Sections">
+      <a href="#install">Install</a>
+      <a href="docs.html">Docs</a>
+      <a href="#features">Features</a>
+      <a class="opt" href="#usage">Usage</a>
+      <a class="opt" href="#performance">Performance</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#contribute">Contribute</a>
+      <a href="https://github.com/alexlm78/eka">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<div class="wrap">
+  <div class="hero">
+    <h1>The <em>ls</em> you already know, rebuilt in Rust.</h1>
+    <p class="lede">Eka is a drop-in replacement for GNU/POSIX <code>ls</code>. Same flags, same output, with color on by default, safe handling of hostile file names, and speed on large directories.</p>
+    <div class="badges">
+      <span class="badge">v0.5.9</span>
+      <span class="badge">macOS + Linux</span>
+      <span class="badge">MIT</span>
+      <span class="badge">no unsafe code</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#install">Install eka</a>
+      <a class="btn" href="https://github.com/alexlm78/eka">View on GitHub</a>
+    </div>
+
+    <div class="term" aria-label="Example eka output">
+      <div class="term-bar"><i></i><i></i><i></i></div>
+<pre><span class="p">$</span> eka -lh --group-directories-first
+<span class="dim">drwxr-xr-x  5 alex staff  160B Oct 26 18:52</span> <span class="d">docs</span>
+<span class="dim">drwxr-xr-x 12 alex staff  384B Oct 26 18:50</span> <span class="d">src</span>
+<span class="dim">drwxr-xr-x  8 alex staff  256B Oct 26 18:44</span> <span class="d">tests</span>
+<span class="dim">-rw-r--r--  1 alex staff  1.2K Oct 26 18:53</span> Cargo.toml
+<span class="dim">-rw-r--r--  1 alex staff  1.1K Oct 24 20:03</span> LICENSE
+<span class="dim">-rw-r--r--  1 alex staff   17K Oct 26 18:54</span> README.md
+<span class="dim">lrwxr-xr-x  1 alex staff     9B Oct 20 09:12</span> <span class="l">latest</span> <span class="dim">-&gt;</span> <span class="x">target/eka</span>
+<span class="p">$</span> eka --quoting-style=shell-escape
+<span class="d">docs</span>  <span class="d">src</span>  <span class="d">tests</span>  Cargo.toml  LICENSE  README.md  <span class="b">'evil'$'\033''[2J'</span></pre>
+    </div>
+  </div>
+</div>
+
+<!-- INSTALL -->
+<section id="install" class="alt">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="sub">Both packages install the <code>eka</code> command. The crate is named <code>eka-ls</code> because <code>eka</code> is taken on crates.io.</p>
+
+    <div class="install">
+      <div class="pkg">
+        <h3>Homebrew <small>macOS · Linux</small></h3>
+        <div class="cmd"><span class="p">$ </span>brew install alexlm78/tap/eka-ls<button class="copy" data-copy="brew install alexlm78/tap/eka-ls">Copy</button></div>
+        <p class="note">That one line adds the tap and installs. Or run <code>brew tap alexlm78/tap</code> first, then <code>brew install eka-ls</code>. Installs the binary, man page and completions for bash, zsh and fish.</p>
+      </div>
+      <div class="pkg">
+        <h3>Cargo <small>needs Rust 1.88+</small></h3>
+        <div class="cmd"><span class="p">$ </span>cargo install eka-ls<button class="copy" data-copy="cargo install eka-ls">Copy</button></div>
+        <p class="note">Builds from crates.io and puts <code>eka</code> in <code>~/.cargo/bin</code>. Make sure that directory is in your <code>PATH</code>.</p>
+      </div>
+    </div>
+
+    <details>
+      <summary>Other ways: release binary, from source, completions</summary>
+      <p><b>Release binary.</b> Download the archive for your system (macOS and Linux, x86-64 and ARM64) from the <a href="https://github.com/alexlm78/eka/releases">releases page</a>, check it against <code>SHA256SUMS</code>, and verify provenance with <code>gh attestation verify FILE --repo alexlm78/eka</code>.</p>
+      <p><b>From source.</b></p>
+      <div class="cmd"><span class="p">$ </span>git clone https://github.com/alexlm78/eka.git &amp;&amp; cd eka
+<span class="p">$ </span>cargo install --path .<button class="copy" data-copy="git clone https://github.com/alexlm78/eka.git && cd eka&#10;cargo install --path .">Copy</button></div>
+      <p><b>Shell completions.</b> <code>eka --completions SHELL</code> prints the script for bash, zsh, fish, elvish or powershell.</p>
+      <div class="cmd"><span class="p">$ </span>source &lt;(eka --completions bash)<button class="copy" data-copy="source <(eka --completions bash)">Copy</button></div>
+      <p><b>Use it as <code>ls</code>.</b> Add <code>alias ls=eka</code> to your shell config.</p>
+    </details>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <h2>Why eka</h2>
+    <p class="sub">A replacement should not surprise you. Eka matches <code>ls</code> first, then improves on it.</p>
+    <div class="grid">
+      <div class="card"><h3>GNU-compatible</h3><p>Dozens of flags and options: <code>-1 -C -x -m -l -a -A -R -S -t -v -X -h --time-style --quoting-style</code> and more. The last option wins, as in GNU <code>ls</code>.</p></div>
+      <div class="card"><h3>Safe output</h3><p>On a terminal, escape sequences and bidirectional overrides in file names are quoted, so a hostile name cannot clear your screen or disguise <code>.exe</code> as <code>.txt</code>.</p></div>
+      <div class="card"><h3>Fast</h3><p>One directory pass, one locked buffered write. It calls <code>stat</code> only when the output needs it. <code>eka | head</code> exits quietly.</p></div>
+      <div class="card"><h3>Color by default</h3><p>Automatic on terminals. Honors <code>NO_COLOR</code> and <code>LS_COLORS</code>, with a sensible palette when unset.</p></div>
+      <div class="card"><h3>Faithful file model</h3><p>Symlinks are not followed unless asked. Broken links, fifos, sockets, devices and setuid/setgid/sticky bits show correctly.</p></div>
+      <div class="card"><h3>Memory-safe Rust</h3><p><code>#![forbid(unsafe_code)]</code>. <code>-R</code> cannot loop on cyclic directories. Bad timestamps print <code>?</code> instead of aborting.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- USAGE -->
+<section id="usage" class="alt">
+  <div class="wrap">
+    <h2>Usage</h2>
+    <p class="sub">If you know <code>ls</code>, you know eka.</p>
+    <div class="term" style="margin-top:0">
+<pre><span class="p">$</span> eka                  <span class="dim"># list the current directory</span>
+<span class="p">$</span> eka -l               <span class="dim"># long format</span>
+<span class="p">$</span> eka -lh              <span class="dim"># long format, human-readable sizes</span>
+<span class="p">$</span> eka -la              <span class="dim"># include hidden files, plus . and ..</span>
+<span class="p">$</span> eka -lSr             <span class="dim"># smallest files first</span>
+<span class="p">$</span> eka -lt              <span class="dim"># newest first</span>
+<span class="p">$</span> eka -R src/          <span class="dim"># recurse into subdirectories</span>
+<span class="p">$</span> eka -d */            <span class="dim"># list the directories themselves</span>
+<span class="p">$</span> eka -F               <span class="dim"># append / * @ | = indicators</span>
+<span class="p">$</span> eka --color=always | less -R</pre>
+    </div>
+    <p class="note">Full option table in the <a href="docs.html#options">documentation</a>, or run <code>eka --help</code> and <code>man eka</code>.</p>
+  </div>
+</section>
+
+<!-- PERFORMANCE -->
+<section id="performance">
+  <div class="wrap">
+    <h2>Performance</h2>
+    <p class="sub">Measured with <code>scripts/bench.sh</code> (hyperfine, 15 runs) on an Apple M-series Mac, APFS, 20,000 files per fixture. Your numbers will differ.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Case</th><th>eka</th><th>GNU ls</th><th>BSD ls</th><th>eza</th></tr></thead>
+        <tbody>
+          <tr><td><code>-1</code>, 20,000 files</td><td class="win">22 ms <small>15 MB</small></td><td>67 ms <small>8 MB</small></td><td>88 ms <small>4 MB</small></td><td>137 ms <small>48 MB</small></td></tr>
+          <tr><td><code>-l</code>, 20,000 files</td><td class="win">85 ms <small>22 MB</small></td><td>133 ms <small>9 MB</small></td><td>214 ms <small>10 MB</small></td><td>497 ms <small>101 MB</small></td></tr>
+          <tr><td><code>-R</code>, 2,200 dirs</td><td>74 ms <small>14 MB</small></td><td>74 ms <small>2 MB</small></td><td>228 ms <small>1 MB</small></td><td>202 ms <small>8 MB</small></td></tr>
+          <tr><td>start-up, 30 files</td><td>4.5 ms <small>6 MB</small></td><td>3.2 ms <small>2 MB</small></td><td>2.3 ms <small>1 MB</small></td><td>8.7 ms <small>7 MB</small></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Honest trade-offs: eka is faster on large flat listings and ties GNU <code>ls</code> on recursion, but it uses more memory (it holds a directory's entries before sorting) and starts a couple of milliseconds slower than the C implementations.</p>
+  </div>
+</section>
+
+<!-- ROADMAP -->
+<section id="roadmap" class="alt">
+  <div class="wrap">
+    <h2>Roadmap</h2>
+    <p class="sub">Eka is pre-1.0. The goal: the same options, output and exit status as GNU <code>ls</code> on macOS and Linux. Full detail in <a href="https://github.com/alexlm78/eka/blob/main/docs/ROADMAP.md">ROADMAP.md</a>.</p>
+    <div class="road">
+      <div class="phase"><div class="tag done">Done</div><div><h3>Core compatibility</h3><p>Every common option, last-option-wins semantics, locale-aware sorting, <code>LS_COLORS</code>, safe output, man page, completions, release archives with provenance attestations, crates.io and Homebrew.</p></div></div>
+      <div class="phase"><div class="tag now">In progress</div><div><h3>Phase 0 · Stabilize</h3><p>Name order on Linux (glibc model reaching ~99% agreement on a hostile 900-name corpus), Linux-only paths in CI, <code>-U</code>/<code>-f</code> edge cases.</p></div></div>
+      <div class="phase"><div class="tag next">Next</div><div><h3>Phase 2 · Fidelity with GNU ls</h3><p><code>LSCOLORS</code>/<code>CLICOLOR</code>, <code>locale</code> and <code>clocale</code> quoting, <code>--author</code> <code>--zero</code> <code>--hyperlink</code>, wide (CJK) character widths, timestamp edge cases.</p></div></div>
+      <div class="phase"><div class="tag next">Planned</div><div><h3>Phase 3 · Platform parity</h3><p><code>-Z</code> / <code>--context</code> with SELinux on Linux.</p></div></div>
+      <div class="phase"><div class="tag next">Planned</div><div><h3>Phase 4 · Robustness</h3><p>Nightly differential tests against GNU <code>ls</code> on random trees, error-message parity, 100k-file benchmarks, property tests for quoting.</p></div></div>
+      <div class="phase"><div class="tag next">Planned</div><div><h3>Phase 5 · Distribution &amp; docs</h3><p>Static musl build, <code>.deb</code> / <code>.rpm</code> packages, AUR <code>PKGBUILD</code>, architecture docs and a migration guide.</p></div></div>
+      <div class="phase"><div class="tag next">Goal</div><div><h3>1.0.0</h3><p>Every known difference from GNU <code>ls</code> fixed or listed as intentional, a clean nightly differential job for several weeks, green CI, a stable command line.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTRIBUTE -->
+<section id="contribute">
+  <div class="wrap">
+    <h2>Contribute</h2>
+    <p class="sub">Contributions are welcome: bug reports, GNU <code>ls</code> differences you find, tests, docs, packaging.</p>
+    <div class="two">
+      <div>
+        <ol class="steps">
+          <li><h3>Get the code</h3>
+            <div class="cmd"><span class="p">$ </span>git clone https://github.com/alexlm78/eka.git &amp;&amp; cd eka<button class="copy" data-copy="git clone https://github.com/alexlm78/eka.git && cd eka">Copy</button></div></li>
+          <li><h3>Build and test</h3>
+            <div class="cmd"><span class="p">$ </span>cargo build
+<span class="p">$ </span>cargo test
+<span class="p">$ </span>cargo clippy --all-targets<button class="copy" data-copy="cargo build&#10;cargo test&#10;cargo clippy --all-targets">Copy</button></div>
+            <p class="note">Needs Rust 1.88 or later (edition 2024).</p></li>
+          <li><h3>Compare against GNU ls</h3>
+            <p class="note" style="margin-top:0">The BSD <code>ls</code> on macOS lacks many GNU options. Point the tests at GNU coreutils:</p>
+            <div class="cmd"><span class="p">$ </span>EKA_TEST_LS=/opt/homebrew/bin/gls cargo test --test compat_ls<button class="copy" data-copy="EKA_TEST_LS=/opt/homebrew/bin/gls cargo test --test compat_ls">Copy</button></div></li>
+          <li><h3>Open a pull request</h3>
+            <p class="note" style="margin-top:0">CI runs Linux (GNU <code>ls</code>) and macOS, a dependency audit and a minimum-Rust-version build.</p></li>
+        </ol>
+      </div>
+      <div>
+        <h3>Project rules</h3>
+        <ul class="plain">
+          <li><b>Every change bumps the version</b> to the next odd patch (0.5.9, 0.5.11, ...) and adds a <code>CHANGELOG.md</code> entry. <code>scripts/check-version.sh</code> enforces it.</li>
+          <li><b>Changed a CLI option?</b> Run <code>scripts/gen-completions.sh</code>; <code>cargo test</code> fails if completions are stale.</li>
+          <li><b>No <code>unsafe</code>.</b> The crate forbids it.</li>
+          <li><b>Three test layers:</b> unit tests next to the code, end-to-end tests in <code>tests/behavior.rs</code>, and comparisons with the system <code>ls</code> in <code>tests/compat_ls.rs</code>.</li>
+        </ul>
+        <h3 style="margin-top:24px">Where to start</h3>
+        <ul class="plain">
+          <li>Pick an item from the <a href="https://github.com/alexlm78/eka/blob/main/docs/ROADMAP.md">roadmap</a>, such as <code>--author</code> or <code>--zero</code>.</li>
+          <li>Read the <a href="https://github.com/alexlm78/eka#known-differences-from-gnu-ls">known differences</a> and fix one.</li>
+          <li>Read <a href="https://github.com/alexlm78/eka/blob/main/docs/eka-architecture.md">the architecture notes</a>.</li>
+          <li>Found a mismatch with GNU <code>ls</code>? <a href="https://github.com/alexlm78/eka/issues">Open an issue</a> with the command and both outputs.</li>
+        </ul>
+        <p class="note">Full guidelines: <a href="https://github.com/alexlm78/eka/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
+        <p style="margin-top:22px"><a class="btn primary" href="https://github.com/alexlm78/eka/issues">Open an issue</a> <a class="btn" href="https://github.com/alexlm78/eka/pulls">Pull requests</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>eka · MIT License</span>
+    <span>
+      <a href="https://github.com/alexlm78/eka">GitHub</a> ·
+      <a href="https://crates.io/crates/eka-ls">crates.io</a> ·
+      <a href="https://github.com/alexlm78/eka/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="https://github.com/alexlm78/eka/releases">Releases</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = b.getAttribute('data-copy');
+    var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1400); };
+    if (navigator.clipboard) { navigator.clipboard.writeText(t).then(done, function () {}); }
+  });
+});
+</script>
+</body>
+</html>

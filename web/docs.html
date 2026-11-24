@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eka documentation</title>
+<meta name="description" content="Reference for eka, a drop-in GNU ls replacement: options, sorting, quoting and safe output, colors, environment variables, exit status and known differences.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="logo.svg" alt="" width="26" height="26">eka<span>_</span></a>
+    <nav aria-label="Sections">
+      <a href="index.html#install">Install</a>
+      <a href="docs.html" aria-current="page">Docs</a>
+      <a href="index.html#roadmap">Roadmap</a>
+      <a href="index.html#contribute">Contribute</a>
+      <a href="https://github.com/alexlm78/eka">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="docs">
+
+<aside class="toc" aria-label="On this page">
+  <b>On this page</b>
+  <a href="#quickstart">Quick start</a>
+  <a href="#options">Options</a>
+  <a href="#sorting">Sorting</a>
+  <a href="#safe-output">Safe output</a>
+  <a href="#color">Color</a>
+  <a href="#env">Environment</a>
+  <a href="#exit">Exit status</a>
+  <a href="#completions">Completions</a>
+  <a href="#migrating">Replacing ls</a>
+  <a href="#differences">Known differences</a>
+  <a href="#platforms">Platforms</a>
+</aside>
+
+<article class="doc">
+<h1>Documentation</h1>
+<p class="sub">Reference for eka 0.5.9. Run <code>eka --help</code> or <code>man eka</code> for the same information in your terminal.</p>
+
+<section id="quickstart">
+  <h2>Quick start</h2>
+  <div class="cmd"><span class="p">$ </span>eka                  # list the current directory
+<span class="p">$ </span>eka -lh              # long format, human-readable sizes
+<span class="p">$ </span>eka -la              # include hidden files, plus . and ..
+<span class="p">$ </span>eka -lSr             # smallest files first
+<span class="p">$ </span>eka -lt              # newest first
+<span class="p">$ </span>eka -R src/          # recurse
+<span class="p">$ </span>eka -d */            # the directories themselves
+<span class="p">$ </span>eka -F               # append / * @ | = indicators
+<span class="p">$ </span>eka --color=always | less -R</div>
+  <p>With several paths, files are listed first, then each directory under its own <code>path:</code> heading, as <code>ls</code> does. On a terminal the output is in columns; when piped it is one entry per line.</p>
+</section>
+
+<section id="options">
+  <h2>Options</h2>
+  <p>When options compete for the same setting, <b>the last one wins</b>, as in GNU <code>ls</code> (<code>-S -t</code> sorts by time, <code>-t -S</code> by size; <code>-F -p</code> appends only <code>/</code>). Repeating an option is allowed.</p>
+
+  <h3>Format</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>-1</code></td><td>One entry per line (default when output is not a terminal)</td></tr>
+    <tr><td><code>-C</code></td><td>Columns, sorted down (default on a terminal)</td></tr>
+    <tr><td><code>-x</code></td><td>Columns, sorted across (rows)</td></tr>
+    <tr><td><code>-m</code></td><td>Comma-separated list, wrapped to the width</td></tr>
+    <tr><td><code>-l</code></td><td>Long listing format</td></tr>
+    <tr><td><code>-n</code>, <code>--numeric-uid-gid</code></td><td>Like <code>-l</code>, with numeric user and group IDs</td></tr>
+    <tr><td><code>-g</code></td><td>Like <code>-l</code>, without the owner</td></tr>
+    <tr><td><code>-o</code></td><td>Like <code>-l</code>, without the group</td></tr>
+    <tr><td><code>-G</code>, <code>--no-group</code></td><td>With <code>-l</code>, do not print the group</td></tr>
+    <tr><td><code>--format=WORD</code></td><td><code>across</code>/<code>horizontal</code> (<code>-x</code>), <code>commas</code> (<code>-m</code>), <code>long</code>/<code>verbose</code> (<code>-l</code>), <code>single-column</code> (<code>-1</code>), <code>vertical</code> (<code>-C</code>)</td></tr>
+    <tr><td><code>-w</code>, <code>--width=COLS</code></td><td>Output width; <code>0</code> means no limit. Default: <code>$COLUMNS</code>, then the terminal, then 80</td></tr>
+    <tr><td><code>-T</code>, <code>--tabsize=COLS</code></td><td>Pad columns with tabs every <code>COLS</code> (default 8); <code>0</code> pads with spaces only. No tabs with <code>-w 0</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Which entries</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>-a</code>, <code>--all</code></td><td>Do not ignore entries starting with <code>.</code>; also show <code>.</code> and <code>..</code></td></tr>
+    <tr><td><code>-A</code>, <code>--almost-all</code></td><td>Like <code>-a</code>, without <code>.</code> and <code>..</code></td></tr>
+    <tr><td><code>-d</code>, <code>--directory</code></td><td>List directories themselves, not their contents</td></tr>
+    <tr><td><code>-R</code>, <code>--recursive</code></td><td>List subdirectories recursively (symlinked directories are not followed)</td></tr>
+    <tr><td><code>-I</code>, <code>--ignore=PATTERN</code></td><td>Do not list entries matching the shell <code>PATTERN</code>; repeatable, applies even with <code>-a</code></td></tr>
+    <tr><td><code>--hide=PATTERN</code></td><td>Like <code>-I</code>, but <code>-a</code> and <code>-A</code> override it</td></tr>
+    <tr><td><code>-B</code>, <code>--ignore-backups</code></td><td>Do not list entries ending with <code>~</code></td></tr>
+    <tr><td><code>-f</code></td><td>Do not sort and list all entries (same as <code>-aU</code>)</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Patterns for <code>-I</code> and <code>--hide</code> support <code>*</code>, <code>?</code>, <code>[abc]</code>, <code>[a-z]</code>, <code>[!abc]</code> and <code>\</code> escapes. They match the whole name (a leading dot is not special) and never apply to paths named on the command line.</p>
+
+  <h3>Sizes, indicators, symlinks</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>-h</code>, <code>--human-readable</code></td><td>With <code>-l</code>, sizes as <code>1.5K</code>, <code>234M</code>, <code>2.0G</code> (rounded up)</td></tr>
+    <tr><td><code>--si</code></td><td>Like <code>-h</code>, with powers of 1000 (<code>1.5k</code>, <code>234M</code>)</td></tr>
+    <tr><td><code>-s</code>, <code>--size</code></td><td>Print the allocated size of each entry in blocks (1 KiB by default); also prints <code>total</code></td></tr>
+    <tr><td><code>-k</code>, <code>--kibibytes</code></td><td>Use 1024-byte blocks (the default)</td></tr>
+    <tr><td><code>--block-size=SIZE</code></td><td>Scale sizes by <code>SIZE</code>: <code>K M G T P E</code> and <code>KiB MiB ...</code> are powers of 1024, <code>KB MB GB ...</code> powers of 1000. A bare unit (<code>K</code>) prints sizes with the suffix (<code>16K</code>); with a number (<code>1K</code>, <code>2K</code>, <code>1024</code>) they print without. <code>-h</code> overrides it</td></tr>
+    <tr><td><code>-i</code>, <code>--inode</code></td><td>Print the inode number of each entry</td></tr>
+    <tr><td><code>-F</code>, <code>--classify</code></td><td>Append an indicator: <code>/</code> directory, <code>*</code> executable, <code>@</code> symlink, <code>|</code> fifo, <code>=</code> socket</td></tr>
+    <tr><td><code>--file-type</code></td><td>Like <code>-F</code>, without <code>*</code></td></tr>
+    <tr><td><code>-p</code>, <code>--indicator-style=STYLE</code></td><td><code>none</code>, <code>slash</code> (<code>-p</code>), <code>file-type</code> or <code>classify</code> (<code>-F</code>)</td></tr>
+    <tr><td><code>-L</code>, <code>--dereference</code></td><td>Show information for the file a symlink points to</td></tr>
+    <tr><td><code>-H</code>, <code>--dereference-command-line</code></td><td>Follow symlinks named on the command line</td></tr>
+    <tr><td><code>-P</code></td><td>Never follow symlinks (default); overrides <code>-H</code> and <code>-L</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Sorting and time</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>-S</code></td><td>Sort by size, largest first</td></tr>
+    <tr><td><code>-t</code></td><td>Sort by time, newest first</td></tr>
+    <tr><td><code>-v</code></td><td>Natural sort of version numbers (<code>file2</code> before <code>file10</code>)</td></tr>
+    <tr><td><code>-X</code></td><td>Sort by extension, then name</td></tr>
+    <tr><td><code>-U</code></td><td>Do not sort; list in directory order</td></tr>
+    <tr><td><code>-r</code>, <code>--reverse</code></td><td>Reverse the sort order</td></tr>
+    <tr><td><code>--sort=WORD</code></td><td><code>name</code> (default), <code>none</code>, <code>size</code>, <code>time</code>, <code>version</code>, <code>extension</code></td></tr>
+    <tr><td><code>--group-directories-first</code></td><td>List directories (and symlinks to directories) first, whatever the sort or <code>-r</code></td></tr>
+    <tr><td><code>-u</code></td><td>Use access time. With <code>-lt</code> sort by it and show it; with <code>-l</code> show it and sort by name; otherwise sort by it</td></tr>
+    <tr><td><code>-c</code></td><td>Use status-change (ctime) time. Same rules as <code>-u</code></td></tr>
+    <tr><td><code>--time=WORD</code></td><td>Show and sort by <code>atime</code> (<code>access</code>, <code>use</code>), <code>ctime</code> (<code>status</code>), <code>mtime</code> (<code>modification</code>) or <code>birth</code> (<code>creation</code>; prints <code>?</code> when the filesystem does not record it)</td></tr>
+    <tr><td><code>--time-style=STYLE</code></td><td><code>full-iso</code>, <code>long-iso</code>, <code>iso</code>, <code>locale</code> or <code>+FORMAT</code> (a <code>strftime</code> format; if it has a newline, the part before is for older files, the part after for recent ones). <code>$TIME_STYLE</code> is the default</td></tr>
+    <tr><td><code>--full-time</code></td><td>Like <code>-l --time-style=full-iso</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Names and quoting</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>-N</code>, <code>--literal</code></td><td>Print names as they are</td></tr>
+    <tr><td><code>-b</code>, <code>--escape</code></td><td>C-style backslash escapes for unusual characters</td></tr>
+    <tr><td><code>-Q</code>, <code>--quote-name</code></td><td>Enclose names in double quotes, with C escapes</td></tr>
+    <tr><td><code>-q</code>, <code>--hide-control-chars</code></td><td>Print <code>?</code> instead of unprintable characters</td></tr>
+    <tr><td><code>--show-control-chars</code></td><td>Print unprintable characters as they are (default when output is not a terminal)</td></tr>
+    <tr><td><code>--quoting-style=WORD</code></td><td><code>literal</code>, <code>shell</code>, <code>shell-always</code>, <code>shell-escape</code>, <code>shell-escape-always</code>, <code>c</code> or <code>escape</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Other</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Option</th><th>Description</th></tr></thead>
+    <tbody>
+    <tr><td><code>--color[=WHEN]</code></td><td><code>always</code>, <code>auto</code> (default) or <code>never</code>; plain <code>--color</code> means <code>always</code></td></tr>
+    <tr><td><code>--completions=SHELL</code></td><td>Print the completion script for <code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>elvish</code> or <code>powershell</code> and exit</td></tr>
+    <tr><td><code>--help</code></td><td>Print help</td></tr>
+    <tr><td><code>-V</code>, <code>--version</code></td><td>Print the version</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="sorting">
+  <h2>Sorting</h2>
+  <ul class="plain">
+    <li>In the <code>C</code> locale (<code>LC_ALL=C</code>) names sort bytewise.</li>
+    <li>In any other locale (<code>LC_ALL</code>, <code>LC_COLLATE</code> or <code>LANG</code>, in that order) names sort ignoring case and accents, with punctuation before digits before letters, as GNU <code>ls</code> does in a UTF-8 locale. macOS and glibc (Linux) each have their own model.</li>
+    <li>Ties in size and time fall back to the name.</li>
+    <li>Directories are not grouped first unless you pass <code>--group-directories-first</code>.</li>
+  </ul>
+  <div class="callout"><b>Tip.</b> For scripts that need a stable, locale-independent order, run <code>LC_ALL=C eka</code>.</div>
+</section>
+
+<section id="safe-output">
+  <h2>Safe output</h2>
+  <p>File names are arbitrary bytes. A name like <code>evil\x1b[2J</code> or <code>report‮txt.exe</code> can clear the screen, change the window title or disguise a file type when printed raw. Eka follows GNU <code>ls</code>:</p>
+  <ul class="plain">
+    <li><b>On a terminal</b> the default quoting style is <code>shell-escape</code>: a name the shell would need quoted is wrapped in single quotes and unprintable characters appear as <code>$'\033'</code>-style escapes, so every name can be pasted back into a shell.</li>
+    <li><b>When piped or redirected</b> names are written as they are, because the output is data for another program. Use <code>-b</code>, <code>-Q</code>, <code>-q</code>, <code>--quoting-style</code> or <code>QUOTING_STYLE</code> to escape them anyway.</li>
+    <li>A newline in a name is always shown as <code>?</code> when names are printed as they are (<code>-N</code>, <code>literal</code>, <code>shell</code>).</li>
+    <li><b>Unprintable</b> means control characters (C0, DEL, C1), bidirectional overrides and isolates, line and paragraph separators, and bytes that are not valid UTF-8.</li>
+    <li>Link targets, <code>path:</code> headings and error messages are quoted the same way.</li>
+    <li><code>-R</code> cannot loop: a directory that is its own ancestor (possible with <code>-L</code>) is reported as <code>not listing already-listed directory</code> and skipped.</li>
+    <li>No <code>unsafe</code> code (<code>#![forbid(unsafe_code)]</code>). Unrepresentable timestamps print <code>?</code>.</li>
+  </ul>
+</section>
+
+<section id="color">
+  <h2>Color</h2>
+  <p>Colors are used only when standard output is a terminal, unless <code>--color</code> says otherwise. With <code>--color=auto</code>, a non-empty <code>NO_COLOR</code> and <code>TERM=dumb</code> turn color off; <code>--color=always</code> ignores them.</p>
+  <p>If <code>LS_COLORS</code> is set, eka uses it (keys <code>di ln ex or pi so bd cd fi</code> and <code>*.ext</code> patterns) on top of the GNU defaults. Otherwise it uses its own palette:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>File type</th><th>Color</th></tr></thead>
+    <tbody>
+    <tr><td>Directory</td><td><span class="sw" style="background:#22d3ee"></span>Cyan</td></tr>
+    <tr><td>Executable</td><td><span class="sw" style="background:#4ade80"></span>Green</td></tr>
+    <tr><td>Symlink, fifo</td><td><span class="sw" style="background:#facc15"></span>Yellow</td></tr>
+    <tr><td>Broken symlink</td><td><span class="sw" style="background:#f87171"></span>Bold red</td></tr>
+    <tr><td>Socket, image</td><td><span class="sw" style="background:#e879f9"></span>Magenta</td></tr>
+    <tr><td>Block / character device</td><td><span class="sw" style="background:#eab308"></span>Bold yellow</td></tr>
+    <tr><td>Video</td><td><span class="sw" style="background:#ef4444"></span>Red</td></tr>
+    <tr><td>Audio</td><td><span class="sw" style="background:#fb923c"></span>Orange</td></tr>
+    <tr><td>Archive</td><td><span class="sw" style="background:#60a5fa"></span>Blue</td></tr>
+    <tr><td>Regular file</td><td>Default</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="env">
+  <h2>Environment variables</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+    <tbody>
+    <tr><td><code>LC_ALL</code>, <code>LC_COLLATE</code>, <code>LANG</code></td><td>Sort order (checked in that order). <code>C</code> sorts bytewise</td></tr>
+    <tr><td><code>LS_COLORS</code></td><td>Colors by file type and extension</td></tr>
+    <tr><td><code>NO_COLOR</code></td><td>When set and not empty, disables color with <code>--color=auto</code></td></tr>
+    <tr><td><code>TERM</code></td><td><code>dumb</code> disables color with <code>--color=auto</code></td></tr>
+    <tr><td><code>QUOTING_STYLE</code></td><td>Default quoting style, same values as <code>--quoting-style</code></td></tr>
+    <tr><td><code>TIME_STYLE</code></td><td>Default for <code>--time-style</code></td></tr>
+    <tr><td><code>COLUMNS</code></td><td>Output width when <code>-w</code> is not given</td></tr>
+    <tr><td><code>EKA_TEST_LS</code></td><td>Development only: the reference <code>ls</code> for <code>cargo test --test compat_ls</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="exit">
+  <h2>Exit status</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+    <tbody>
+    <tr><td><code>0</code></td><td>Success</td></tr>
+    <tr><td><code>1</code></td><td>Minor problem, such as an unreadable entry inside a listed directory</td></tr>
+    <tr><td><code>2</code></td><td>Serious problem, such as a path on the command line that cannot be accessed</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="completions">
+  <h2>Shell completions and man page</h2>
+  <p>Homebrew installs the man page and completions for you. Otherwise, <code>eka --completions SHELL</code> prints the script for <code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>elvish</code> or <code>powershell</code>.</p>
+  <div class="cmd"><span class="p">$ </span># bash: add to ~/.bashrc
+<span class="p">$ </span>source &lt;(eka --completions bash)
+
+<span class="p">$ </span># zsh: put the script in a directory of $fpath, then run compinit
+<span class="p">$ </span>eka --completions zsh &gt; "${fpath[1]}/_eka"
+
+<span class="p">$ </span># fish
+<span class="p">$ </span>eka --completions fish &gt; ~/.config/fish/completions/eka.fish</div>
+  <p>From a source checkout, <code>./install-manpage.sh</code> installs the man page.</p>
+</section>
+
+<section id="migrating">
+  <h2>Replacing ls</h2>
+  <p>Try it first as an alias; nothing else on your system changes:</p>
+  <div class="cmd"><span class="p">$ </span>alias ls=eka          # add to ~/.bashrc or ~/.zshrc
+<span class="p">$ </span>alias ll='eka -lh'</div>
+  <p>Aliases apply only to interactive shells, so scripts keep using the system <code>ls</code>. Eka is not yet 1.0 and a few GNU options are missing (see below), so leave scripts alone until you have checked what they use.</p>
+</section>
+
+<section id="differences">
+  <h2>Known differences from GNU ls</h2>
+  <ul class="plain">
+    <li><b>Not implemented yet:</b> <code>--author</code>, <code>-D</code>, <code>-Z</code>.</li>
+    <li><b>Sort order:</b> eka approximates GNU collation. It matches GNU <code>ls</code> on Latin-script names, ASCII punctuation, digits and accented Latin-1 letters. On Linux it follows glibc; in a 900-name random-symbol test, 3 pairs differing only in punctuation and accents or case sort differently. Other scripts and language rules (Spanish <code>ch</code>, German <code>ß</code>) sort by code point.</li>
+    <li><b>Newlines in names:</b> with <code>--quoting-style=literal</code> or <code>shell</code> (and <code>-N</code>) eka prints <code>?</code>. GNU coreutils 9.4 prints it raw; newer versions print <code>?</code>.</li>
+    <li><b>Column fit:</b> eka lets columns fill the width exactly (<code>total &lt;= width</code>), like recent coreutils. Ubuntu's 9.4 needs <code>total &lt; width</code>.</li>
+    <li><b>Quoting:</b> shell styles always use single quotes (<code>'it'\''s'</code>); GNU uses double quotes for a name with an apostrophe. <code>locale</code> and <code>clocale</code> styles are not implemented. With <code>--quoting-style=shell</code>, a name whose only special character is a control character is quoted by eka and left bare by GNU.</li>
+    <li><b>Bidi overrides</b> (such as U+202E) are always unprintable. GNU decides by locale.</li>
+    <li><b>Wide characters:</b> column widths count code points, so CJK is not measured correctly.</li>
+    <li><b><code>total</code></b> counts 1 KiB blocks, as GNU does; BSD/macOS <code>ls</code> counts 512-byte blocks.</li>
+    <li><b>Attribute markers:</b> on macOS <code>-l</code> prints <code>@</code> for extended attributes but not <code>+</code> for ACLs. On Linux it prints <code>+</code> (POSIX ACL) and <code>.</code> (SELinux). The column appears only when some file has a marker.</li>
+    <li><b><code>-U</code>/<code>-f</code>:</b> eka puts <code>.</code> and <code>..</code> first rather than where <code>readdir</code> returns them.</li>
+  </ul>
+  <p class="note">Found another difference? <a href="https://github.com/alexlm78/eka/issues">Open an issue</a> with the command and both outputs.</p>
+</section>
+
+<section id="platforms">
+  <h2>Platforms and requirements</h2>
+  <ul class="plain">
+    <li>macOS and Linux, x86-64 and ARM64. Windows is not supported.</li>
+    <li>Building from source needs Rust 1.88 or later (edition 2024).</li>
+    <li>Release archives carry a build-provenance attestation: <code>gh attestation verify FILE --repo alexlm78/eka</code>.</li>
+  </ul>
+</section>
+
+</article>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>eka · MIT License</span>
+    <span>
+      <a href="https://github.com/alexlm78/eka">GitHub</a> ·
+      <a href="https://crates.io/crates/eka-ls">crates.io</a> ·
+      <a href="https://github.com/alexlm78/eka/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="https://github.com/alexlm78/eka/releases">Releases</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

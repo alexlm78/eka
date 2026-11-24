@@ -288,4 +288,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the tests and the project rules, then feel free to submit a Pull Request.
