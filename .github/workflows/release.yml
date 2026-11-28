@@ -87,7 +87,7 @@ jobs:
         run: |
           scripts/package.sh "${{ needs.verify.outputs.version }}" "${{ matrix.target }}" \
             "target/${{ matrix.target }}/release/eka" dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: eka-${{ matrix.target }}
           path: dist/*
