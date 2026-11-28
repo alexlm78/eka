@@ -114,7 +114,7 @@ jobs:
           cat ./*.sha256 | sort -k 2 > SHA256SUMS
           rm ./*.tar.gz.sha256
           sha256sum --check SHA256SUMS
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*.tar.gz
       - name: Create the release
