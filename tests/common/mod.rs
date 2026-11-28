@@ -231,12 +231,14 @@ pub fn has_system_ls() -> bool {
     Path::new(&ls_path()).exists()
 }
 
-/// GNU coreutils answers `--version`; the BSD ls rejects it
+/// Only GNU coreutils prints "GNU" in `--version`. The BSD ls rejects the
+/// flag, and uutils (the Rust coreutils, `/bin/ls` on Ubuntu 26.04) accepts it
+/// but differs from GNU in tabs, block sizes and time ties.
 pub fn system_ls_is_gnu() -> bool {
     Command::new(ls_path())
         .arg("--version")
         .output()
-        .is_ok_and(|o| o.status.success())
+        .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).contains("GNU"))
 }
 
 pub fn text(bytes: &[u8]) -> String {

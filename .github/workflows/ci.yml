@@ -30,7 +30,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
-        run: cargo test --locked
+        # Ubuntu 26.04 makes uutils the default ls; GNU ls is `gnuls`
+        run: |
+          if [ -x /usr/bin/gnuls ]; then export EKA_TEST_LS=/usr/bin/gnuls; fi
+          cargo test --locked
       - name: Release build
         run: cargo build --release --locked
 
